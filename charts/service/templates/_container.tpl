@@ -35,7 +35,11 @@ ports:
     protocol: TCP
   {{- end }}
 {{- end }}
-{{- with $c.environment }}
+{{- $environment := dict -}}
+{{- range $key, $value := $c.environment -}}
+{{- if ne $value nil -}}{{ $_ := set $environment $key $value }}{{- end -}}
+{{- end -}}
+{{- with $environment }}
 env:
   {{- range $key, $value := . }}
   {{- if ne $value nil }}

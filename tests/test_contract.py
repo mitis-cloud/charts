@@ -98,6 +98,45 @@ class ServiceContract(unittest.TestCase):
                         capture_output=True,
                     )
 
+    def test_success_cleanup_and_failed_result_ttl_are_independent(self):
+        values = {
+            "workload": "resources",
+            "jobs": {
+                "setup": {
+                    "run": "after-ready",
+                    "command": ["setup"],
+                    "cleanup": "on-success",
+                    "resultLifetime": "5m",
+                }
+            },
+        }
+        job = resource(render(self.chart, self.base, values), "Job")
+        self.assertEqual(job["spec"]["ttlSecondsAfterFinished"], 300)
+        self.assertEqual(
+            job["metadata"]["annotations"]["helm.sh/hook-delete-policy"],
+            "before-hook-creation,hook-succeeded",
+        )
+        render(
+            self.chart,
+            self.base,
+            values,
+            {"jobs": {"setup": {"cleanup": "10m"}}},
+            success=False,
+        )
+
+    def test_private_ingress_uses_private_dns_zone(self):
+        base = {
+            "ports": {"http": 8080},
+            "http": {"hostname": "internal.example.org", "exposure": "private"},
+        }
+        ingress = resource(render(self.chart, self.base, base), "Ingress")
+        self.assertEqual(
+            ingress["metadata"]["annotations"][
+                "external-dns.alpha.kubernetes.io/route53-private-zone"
+            ],
+            "true",
+        )
+
     def test_unknown_and_future_fields_fail(self):
         for invalid in [
             {"mitis": {}},
@@ -110,6 +149,74 @@ class ServiceContract(unittest.TestCase):
         ]:
             with self.subTest(invalid=invalid):
                 render(self.chart, self.base, invalid, success=False)
+
+    def test_environment_layers_can_remove_optional_storage_and_secret_keys(self):
+        service = {
+            "storage": {"assets": {"existing": "shared-assets"}},
+            "mounts": {"assets": "/srv"},
+            "secrets": {
+                "credentials": {
+                    "values": {"required": "required", "optional": "optional"}
+                }
+            },
+            "environment": {
+                "OPTIONAL": {"secret": {"name": "credentials", "key": "optional"}}
+            },
+        }
+        override = {
+            "storage": {"assets": None},
+            "mounts": {"assets": None},
+            "secrets": {"credentials": {"values": {"optional": None}}},
+            "environment": {"OPTIONAL": None},
+        }
+        docs = render(self.chart, self.base, service, override)
+        pod = resource(docs, "Deployment")["spec"]["template"]["spec"]
+        self.assertNotIn("volumes", pod)
+        self.assertNotIn("volumeMounts", pod["containers"][0])
+        self.assertNotIn("env", pod["containers"][0])
+        self.assertEqual(
+            resource(docs, "ExternalSecret")["spec"]["data"],
+            [
+                {"secretKey": "required", "remoteRef": {"key": "required"}},
+            ],
+        )
+        render(
+            self.chart, self.base, service, {"storage": {"assets": None}}, success=False
+        )
+        render(
+            self.chart,
+            self.base,
+            service,
+            override,
+            {"secrets": {"credentials": {"values": {"required": None}}}},
+            success=False,
+        )
+
+    def test_explicit_manual_task_can_share_its_resource_only_release(self):
+        service = {
+            "workload": "resources",
+            "secrets": {"inputs": {"values": {"key": "key"}}},
+            "jobs": {
+                "reset": {"run": "manual", "command": ["reset"]},
+                "other": {"run": "manual", "command": ["other"]},
+            },
+        }
+        ordinary = render(self.chart, self.base, service)
+        self.assertEqual([d["kind"] for d in ordinary], ["ExternalSecret"])
+        selected = render(self.chart, self.base, service, {"render": {"task": "reset"}})
+        self.assertEqual([d["kind"] for d in selected], ["ExternalSecret", "Job"])
+        self.assertEqual(resource(selected, "Job")["metadata"]["name"], "sample-reset")
+        self.assertEqual(
+            resource(selected, "Job")["metadata"]["annotations"]["helm.sh/hook"],
+            "post-install,post-upgrade",
+        )
+        render(
+            self.chart,
+            self.base,
+            service,
+            {"render": {"task": "missing"}},
+            success=False,
+        )
 
     def test_projected_identity_tokens_rotate_and_are_explicit(self):
         values = {

@@ -1,5 +1,27 @@
 {{- define "mitis.service.validate" -}}
 {{- $v := .Values -}}
+{{- range $key, $value := $v.storage -}}
+{{- if eq (kindOf $value) "invalid" -}}{{ $_ := unset $v.storage $key }}{{- end -}}
+{{- end -}}
+{{- $processes := list $v -}}
+{{- range $c := $v.init -}}{{ $processes = append $processes $c }}{{- end -}}
+{{- range $c := $v.sidecars -}}{{ $processes = append $processes $c }}{{- end -}}
+{{- range $job := $v.jobs -}}
+{{- $processes = append $processes $job -}}
+{{- range $c := $job.init -}}{{ $processes = append $processes $c }}{{- end -}}
+{{- end -}}
+{{- if $v.updates.smoke -}}{{ $processes = append $processes $v.updates.smoke }}{{- end -}}
+{{- range $c := $processes -}}
+{{- range $key, $value := $c.mounts -}}
+{{- if eq (kindOf $value) "invalid" -}}{{ $_ := unset $c.mounts $key }}{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- range $secret := $v.secrets -}}
+{{- range $key, $value := $secret.values -}}
+{{- if eq (kindOf $value) "invalid" -}}{{ $_ := unset $secret.values $key }}{{- end -}}
+{{- end -}}
+{{- if not $secret.values -}}{{ fail "managed secrets require at least one remote value after omissions" }}{{- end -}}
+{{- end -}}
 {{- $name := include "mitis.service.name" . -}}
 {{- $identities := dict -}}
 {{- if and (eq $v.workload "resources") (or $v.init $v.sidecars $v.ports $v.health $v.environment $v.files $v.tokens $v.mounts (and $v.http (not $v.response)) $v.availability $v.command $v.args $v.identity $v.fileGroup $v.shutdown $v.workingDirectory $v.account $v.security $v.discovery (hasKey $v "apiToken")) -}}
@@ -88,6 +110,7 @@
 {{- end -}}
 {{- end -}}
 {{- range $id, $job := $v.jobs -}}
+{{- if and $job.resultLifetime (or $job.schedule (regexMatch "^[1-9][0-9]*(s|m|h)$" ($job.cleanup | default ""))) -}}{{ fail "resultLifetime requires a release job with an immediate or next-run cleanup policy" }}{{- end -}}
 {{- include "mitis.service.reserve" (dict "identities" $identities "kind" "Task" "name" ($job.name | default (printf "%s-%s" $name $id))) -}}
 {{- if and (not $job.run) (not $job.schedule) -}}{{ fail (printf "jobs.%s requires run or schedule" $id) }}{{- end -}}
 {{- if and $job.schedule (or (hasKey $job "order") (hasKey $job "cleanup")) -}}{{ fail "scheduled jobs do not accept release order or cleanup; use history for result retention" }}{{- end -}}
@@ -97,11 +120,11 @@
 {{- end -}}
 {{- if and $v.updates.smoke (eq ($v.updates.smoke.timeout | default "") "none") -}}{{ fail "canary smoke requires a bounded timeout" }}{{- end -}}
 
-{{- if eq $v.render.part "task" -}}
+{{- if or (eq $v.render.part "task") (and (eq $v.render.part "all") $v.render.task) -}}
 {{- $task := required "render.task is required for the task part" $v.render.task -}}
 {{- if not (hasKey $v.jobs $task) -}}{{ fail "render.task must identify a declared manual job" }}{{- end -}}
 {{- if ne (index $v.jobs $task).run "manual" -}}{{ fail "render.task must identify a manual job" }}{{- end -}}
-{{- else if $v.render.task -}}{{ fail "render.task is only allowed with render.part=task" }}{{- end -}}
+{{- else if $v.render.task -}}{{ fail "render.task is only allowed with render.part=all or task" }}{{- end -}}
 {{- end -}}
 
 {{- define "mitis.service.reserve" -}}

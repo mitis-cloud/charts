@@ -2,7 +2,7 @@
 
 ## Values layering
 
-Both charts use ordinary Helm merging: chart defaults → canonical service → environment defaults → service/environment overrides. Maps merge; lists replace. Service environment entries can be set to null to omit them. Helpers inherit only the main image, as a whole, when their own image object is absent.
+Both charts use ordinary Helm merging: chart defaults → canonical service → environment defaults → service/environment overrides. Maps merge; lists replace. Service environment entries, storage entries, mounts, and individual managed-secret values can be set to null to omit them. Remove references to an omitted storage or Secret key in the same override; a managed Secret still needs at least one remote value. Helpers inherit only the main image, as a whole, when their own image object is absent.
 
 ```text
 services/api.yaml
@@ -34,7 +34,7 @@ releases:
 
 This is an installation pattern for a published version, not proof that version is already released. Check the repository's tags/package first. The [local Helmfile fixture](../examples/helmfile.yaml) uses the source chart for reproducible rendering.
 
-Helm before-hooks execute before ordinary resources, including their ConfigMaps and ExternalSecrets. A before-job that needs chart-managed inputs therefore uses **two stable releases of the same definition**:
+Helm before-hooks execute before ordinary resources, including their ConfigMaps and ExternalSecrets. Prefer a resource-only service with an `after-ready` job and a downstream Helmfile `needs` dependency for an independently purposeful migration. This creates its inputs and runs its failure-gating job in one release. A genuine before-job attached to a running service that needs chart-managed inputs requires **two stable releases of the same definition**:
 
 ```yaml
 releases:
@@ -88,6 +88,8 @@ Argo health checks must cover selected custom resources. ExternalSecret readines
 The delivery chart generates ordinary-apply Applications with `RespectIgnoreDifferences=true`. Do not add Force/Replace synchronization to protected workloads. Install the documented capacity and progressive-routing field ownership together with the corresponding service capabilities.
 
 ## Manual jobs
+
+For a resource-only task service, explicitly set `render.task` on its normal release with `render.part: all`. Its inputs remain owned by that release, and the selected task runs as a post-install/post-upgrade hook. Clear `render.task` after the invocation; ordinary reconciliation will not run it. Dedicated service jobs should use this single-release pattern rather than creating historical input/runtime splits.
 
 `run: manual` jobs are excluded from ordinary rendering. Execute only through a separately selected task release, after inputs exist:
 

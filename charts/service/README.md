@@ -137,6 +137,7 @@ See the [storage guide](../../docs/storage.md) for the complete storage/mount re
 | `startDeadline` | Optional scheduled job late-start budget, in seconds. |
 | `timeZone` | Optional IANA time zone for a scheduled job, such as `Etc/UTC`; omission uses the controller's zone. |
 | `cleanup` | Release result retention: `on-success` (default), `on-completion`, `next-run`, or a duration such as `5m` after completion. Durations use the native Job TTL controller. |
+| `resultLifetime` | Optional native TTL for results retained by `on-success`, `on-completion`, or `next-run`. For example, `cleanup: on-success` plus `resultLifetime: 5m` removes successful hooks immediately and retains failed results for up to five minutes after completion. Cannot combine with duration-valued cleanup or scheduled jobs. |
 
 Jobs also accept `account`, `apiToken`, `discovery`, and `security` with the process semantics above; declare them on each job. They do not inherit the main process's identity or token settings.
 
@@ -150,4 +151,6 @@ Canary requires Gateway routing, HTTP exposure, and an explicit `updates.smoke` 
 
 ## Orchestration selectors
 
-`render.engine` is `helm` or `argo`; `render.part` is `all`, `inputs`, `runtime`, `application`, `scheduled`, or `task`; `render.routing` is `ingress` or `gateway`. The optional application/scheduled split preserves a separate scheduled-helper release: `application` owns inputs, continuous workload, and release jobs; `scheduled` owns only CronJobs. `render.order` is a coordinated-service slot from 0 to 100, default 0, preserving input/job/runtime ordering within each slot. `render.task` is required only for the `task` part and must name a declared manual job. These are finite rendering selections for maintained orchestration, not a second service specification. Their defaults are helm/all/ingress. Keep stable release owners; never alternate parts on an existing release.
+`render.engine` is `helm` or `argo`; `render.part` is `all`, `inputs`, `runtime`, `application`, `scheduled`, or `task`; `render.routing` is `ingress` or `gateway`. Ordinary services and their dedicated helpers use `all` in one release. The optional application/scheduled split supports an explicitly independent scheduled-helper owner: `application` owns inputs, continuous workload, and release jobs; `scheduled` owns only CronJobs. `render.order` is a coordinated-service slot from 0 to 100, default 0, preserving input/job/runtime ordering within each slot. `render.task` is required for the `task` part and must name a declared manual job. Since 0.1.2, it can also select a manual job with `part: all`, keeping the job and its inputs in one release. Omitting it excludes manual jobs. These are finite rendering selections for maintained orchestration, not a second service specification. Their defaults are helm/all/ingress. Keep stable release owners; never alternate parts on an existing release.
+
+Since 0.1.2, an environment layer may set an individual `storage`, `mounts`, or `secrets.<name>.values` entry to null to remove it. Omit the matching references too; dangling storage mounts and empty managed Secrets fail validation.

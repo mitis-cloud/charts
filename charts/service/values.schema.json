@@ -59,8 +59,9 @@
     "storage": {
       "type": "object", "propertyNames": {"$ref": "#/definitions/name"},
       "additionalProperties": {
-        "oneOf": [
-          {"type": "object", "additionalProperties": false, "required": ["access"], "properties": {
+         "oneOf": [
+           {"type": "null"},
+           {"type": "object", "additionalProperties": false, "required": ["access"], "properties": {
             "access": {"const": "shared"}, "name": {"$ref": "#/definitions/name"},
             "size": {"$ref": "#/definitions/quantity", "description": "PVC request metadata; not an EFS quota."},
             "retain": {"type": "boolean", "description": "Retain the claim on chart removal; defaults to true."}
@@ -87,7 +88,7 @@
             {"type": ["string", "number", "boolean"]},
             {"type": "object", "additionalProperties": false, "required": ["fact"], "properties": {"fact": {"type": "string", "minLength": 1}}}
           ]}, "description": "Non-secret literal/environment facts exposed as $context inside ESO templates. No Helm evaluation."},
-          "values": {"type": "object", "minProperties": 1, "additionalProperties": {"$ref": "#/definitions/remote"}},
+          "values": {"type": "object", "minProperties": 1, "additionalProperties": {"oneOf": [{"$ref": "#/definitions/remote"}, {"type": "null"}]}},
           "template": {"type": "object", "additionalProperties": {"type": "string"}, "description": "ESO v2 templates, evaluated only by External Secrets. Strings are never Helm templates."}
         }
       }
@@ -204,6 +205,7 @@
       }
     }},
     "mounts": {"type": "object", "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {"oneOf": [
+      {"type": "null"},
       {"$ref": "#/definitions/path"},
       {"type": "object", "additionalProperties": false, "required": ["path"], "properties": {
         "path": {"$ref": "#/definitions/path"}, "readOnly": {"type": "boolean"},
@@ -246,7 +248,8 @@
         "apiToken": {"type": "boolean"},
         "account": {"$ref": "#/definitions/name"},
         "fileGroup": {"type": "integer", "minimum": 0},
-        "cleanup": {"oneOf": [{"enum": ["on-success", "on-completion", "next-run"]}, {"$ref": "#/definitions/duration"}], "description": "Release-job result retention or elapsed retention after completion; defaults to on-success."},
+         "cleanup": {"oneOf": [{"enum": ["on-success", "on-completion", "next-run"]}, {"$ref": "#/definitions/duration"}], "description": "Release-job result retention or elapsed retention after completion; defaults to on-success."},
+         "resultLifetime": {"$ref": "#/definitions/duration", "description": "Optional TTL for results retained by a release job's immediate cleanup policy."},
         "history": {"type": "object", "additionalProperties": false, "properties": {"successful": {"type": "integer", "minimum": 0}, "failed": {"type": "integer", "minimum": 0}}},
         "startDeadline": {"type": "integer", "minimum": 1, "description": "Scheduled job's maximum late-start budget in seconds."}
       },

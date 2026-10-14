@@ -4,7 +4,9 @@ backoffLimit: {{ if hasKey $job "retries" }}{{ $job.retries }}{{ else }}0{{ end 
 {{- if and (ne ($job.timeout | default "") "none") (or (not $job.schedule) $job.timeout) }}
 activeDeadlineSeconds: {{ include "mitis.service.seconds" ($job.timeout | default "10m") }}
 {{- end }}
-{{- if regexMatch "^[1-9][0-9]*(s|m|h)$" ($job.cleanup | default "") }}
+{{- if $job.resultLifetime }}
+ttlSecondsAfterFinished: {{ include "mitis.service.seconds" $job.resultLifetime }}
+{{- else if regexMatch "^[1-9][0-9]*(s|m|h)$" ($job.cleanup | default "") }}
 ttlSecondsAfterFinished: {{ include "mitis.service.seconds" $job.cleanup }}
 {{- end }}
 template:

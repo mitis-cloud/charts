@@ -111,6 +111,9 @@ metadata:
     {{- end }}
     {{- end }}
     external-dns.alpha.kubernetes.io/hostname: {{ join "," $hosts | quote }}
+    {{- if eq .exposure "private" }}
+    external-dns.alpha.kubernetes.io/route53-private-zone: 'true'
+    {{- end }}
 spec:
   ingressClassName: {{ $root.Release.Namespace }}-{{ .exposure }}
   rules:
