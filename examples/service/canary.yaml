@@ -10,6 +10,7 @@ ports:
   http: 8080
 http:
   exposure: public
+  redirectFromHttp: true
   hostname: api.test.example.com
 health:
   readiness: {http: /ready, port: http}

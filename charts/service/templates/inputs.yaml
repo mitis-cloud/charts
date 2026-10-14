@@ -1,4 +1,5 @@
-{{- if has .Values.render.part (list "all" "inputs") -}}
+{{- include "mitis.service.validate" . -}}
+{{- if has .Values.render.part (list "all" "inputs" "application") -}}
 {{- $root := . -}}
 {{- $name := include "mitis.service.name" . -}}
 {{- $secrets := deepCopy .Values.secrets -}}
@@ -103,7 +104,7 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ $name }}
+  name: {{ $name }}-role
   annotations:
     {{- include "mitis.service.wave" (dict "root" $root "wave" -20) | nindent 4 }}
 rules:
@@ -119,13 +120,13 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ $name }}
+  name: {{ $name }}-rolebinding
   annotations:
     {{- include "mitis.service.wave" (dict "root" $root "wave" -20) | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ $name }}
+  name: {{ $name }}-role
 subjects:
   - kind: ServiceAccount
     name: {{ $name }}

@@ -1,4 +1,5 @@
-{{- if and (has .Values.render.part (list "all" "runtime")) (eq .Values.workload "deployment") -}}
+{{- include "mitis.service.validate" . -}}
+{{- if and (has .Values.render.part (list "all" "runtime" "application")) (eq .Values.workload "deployment") -}}
 {{- $name := include "mitis.service.name" . -}}
 {{- $canary := eq .Values.updates.strategy "canary" -}}
 apiVersion: {{ ternary "argoproj.io/v1alpha1" "apps/v1" $canary }}

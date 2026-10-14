@@ -1,4 +1,5 @@
-{{- if and (has .Values.render.part (list "all" "runtime")) (eq .Values.workload "deployment") -}}
+{{- include "mitis.service.validate" . -}}
+{{- if and (has .Values.render.part (list "all" "runtime" "application")) (eq .Values.workload "deployment") -}}
 {{- $root := . -}}
 {{- $name := include "mitis.service.name" . -}}
 {{- $canary := eq .Values.updates.strategy "canary" -}}
@@ -29,7 +30,9 @@ spec:
 {{- end }}
 {{- end }}
 {{- with .Values.http }}
-{{- $hostname := include "mitis.service.value" (dict "root" $root "value" (dict "url" (dict "hostname" (.hostname | default "") "subdomain" (.subdomain | default $name)))) | trimPrefix "https://" -}}
+{{- $subdomain := $name -}}
+{{- if hasKey . "subdomain" -}}{{ $subdomain = .subdomain }}{{- end -}}
+{{- $hostname := include "mitis.service.value" (dict "root" $root "value" (dict "url" (dict "hostname" (.hostname | default "") "subdomain" $subdomain))) | trimPrefix "https://" -}}
 {{- $hosts := prepend (.aliases | default list) $hostname -}}
 {{- $portName := .port | default "http" -}}
 {{- $port := index $root.Values.ports $portName -}}
@@ -64,6 +67,26 @@ spec:
           port: {{ $listen }}
           weight: 0
         {{- end }}
+{{- if .redirectFromHttp }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $name }}-http
+  annotations:
+    {{- include "mitis.service.wave" (dict "root" $root "wave" 0) | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ .exposure }}
+      sectionName: http
+  hostnames: {{ toJson $hosts }}
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301
+{{- end }}
 {{- else }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -74,8 +97,11 @@ metadata:
   annotations:
     {{- include "mitis.service.wave" (dict "root" $root "wave" 0) | nindent 4 }}
     alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/listen-ports: {{ ternary "[{\"HTTP\":80},{\"HTTPS\":443}]" "[{\"HTTPS\":443}]" (.redirectFromHttp | default false) | quote }}
     alb.ingress.kubernetes.io/ssl-redirect: '443'
+    {{- if hasKey . "priority" }}
+    alb.ingress.kubernetes.io/group.order: {{ .priority | quote }}
+    {{- end }}
     {{- with .healthcheck }}
     {{- with .path }}
     alb.ingress.kubernetes.io/healthcheck-path: {{ . | quote }}

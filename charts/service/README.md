@@ -49,6 +49,10 @@ health:
 
 `http.exposure` is `public` or `private`. `hostname` overrides `subdomain` + environment `domain`; the default subdomain is the service name. `aliases` adds hostnames. `paths` defaults to `[/]`; `port` defaults to `http`. All declared hosts must already have supported DNS/TLS infrastructure. External routes use HTTPS. [Routing prerequisites](../../docs/integrations.md) define the controller conventions.
 
+Set `subdomain: ''` explicitly to serve the base domain. Ingress-only `priority` preserves an explicit shared-ALB rule order (-1000–1000; lower numbers match first). Gateway mode rejects `priority` and `healthcheck`, whose ALB settings have no portable Gateway equivalent.
+
+`redirectFromHttp: true` additionally accepts plain HTTP solely to redirect to HTTPS. In Gateway mode the platform must also provide the `http` listener; the chart creates a separate redirect route. Omission requests HTTPS only.
+
 Each health check uses either `http: /path` (with optional `port` and literal `headers`) or `tcp: <port>`. Named ports must exist. `delay`, `interval`, `timeout`, and `failures` use seconds/counts, defaulting to 0, 10, 2, and 3; startup defaults to 30 failures. Startup, readiness, and liveness have distinct responsibilities. No endpoint is invented when health checks are omitted.
 
 ## Environment and secrets
@@ -115,7 +119,7 @@ See the [storage guide](../../docs/storage.md) for the complete storage/mount re
 | `schedule` | Cron schedule; jobs use `Forbid` concurrency. |
 | `name` | Explicit Kubernetes job/CronJob name when identity continuity requires it. |
 | `order` | 0–9 within the before/after group; default 0. |
-| `timeout` | Positive whole `s`, `m`, or `h`; default `10m`. |
+| `timeout` | Positive whole `s`, `m`, or `h`; release jobs default to `10m`, scheduled jobs have no deadline unless declared. |
 | `retries` | Job backoff limit, default 0. |
 | `suspend` | Suspend a scheduled job, default false. |
 | `history.successful`, `.failed` | Scheduled result-history counts; each defaults to 1, and zero is preserved. |
@@ -132,4 +136,4 @@ Canary requires Gateway routing, HTTP exposure, and an explicit `updates.smoke` 
 
 ## Orchestration selectors
 
-`render.engine` is `helm` or `argo`; `render.part` is `all`, `inputs`, `runtime`, or `task`; `render.routing` is `ingress` or `gateway`. `render.order` is a coordinated-service slot from 0 to 100, default 0, preserving input/job/runtime ordering within each slot. `render.task` is required only for the `task` part and must name a declared manual job. These are finite rendering selections for maintained orchestration, not a second service specification. Their defaults are helm/all/ingress. Keep stable release owners; never alternate parts on an existing release.
+`render.engine` is `helm` or `argo`; `render.part` is `all`, `inputs`, `runtime`, `application`, `scheduled`, or `task`; `render.routing` is `ingress` or `gateway`. The optional application/scheduled split preserves a separate scheduled-helper release: `application` owns inputs, continuous workload, and release jobs; `scheduled` owns only CronJobs. `render.order` is a coordinated-service slot from 0 to 100, default 0, preserving input/job/runtime ordering within each slot. `render.task` is required only for the `task` part and must name a declared manual job. These are finite rendering selections for maintained orchestration, not a second service specification. Their defaults are helm/all/ingress. Keep stable release owners; never alternate parts on an existing release.

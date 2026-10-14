@@ -1,7 +1,9 @@
 {{- define "mitis.service.jobSpec" -}}
 {{- $job := .job -}}
 backoffLimit: {{ if hasKey $job "retries" }}{{ $job.retries }}{{ else }}0{{ end }}
+{{- if or (not $job.schedule) $job.timeout }}
 activeDeadlineSeconds: {{ include "mitis.service.seconds" ($job.timeout | default "10m") }}
+{{- end }}
 template:
   metadata:
     labels:
@@ -26,7 +28,9 @@ metadata:
   labels:
     {{- include "mitis.service.labels" $root | nindent 4 }}
   annotations:
-    {{- if not $job.schedule }}
+    {{- if $job.schedule }}
+    {{- include "mitis.service.wave" (dict "root" $root "wave" 10) | nindent 4 }}
+    {{- else }}
     {{- if eq $root.Values.render.engine "argo" }}
     argocd.argoproj.io/hook: Sync
     {{- include "mitis.service.wave" (dict "root" $root "wave" $wave) | nindent 4 }}

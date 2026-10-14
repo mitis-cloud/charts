@@ -48,7 +48,7 @@ Retain vendor charts. When a product has dedicated helpers, a thin project-owned
 
 ## Develop and verify
 
-Use Helm 4.3.0, kubeconform 0.8.0, and Python 3.14 (the implementation's existing test interpreter). These tool pins and the current stable integration references were checked on 2026-10-14. Existing consumer/controller versions are compatibility constraints, not automatically upgraded by these charts.
+Use Helm 4.3.0, kubeconform 0.8.0, Go 1.27.2, and Python 3.14 (the implementation's existing test interpreter). These tool pins and the current stable integration references were checked on 2026-10-14. Go supplies native template-expansion checks and builds kubeconform. Existing consumer/controller versions are compatibility constraints, not automatically upgraded by these charts.
 
 ```sh
 python3 -m pip install -r requirements-test.txt

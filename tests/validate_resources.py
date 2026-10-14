@@ -107,6 +107,7 @@ def main():
         registry = registry.with_resource(url, Resource.from_contents(schema))
 
     native = []
+    applications = []
     count = 0
     for chart in ["service", "delivery"]:
         for example in sorted((ROOT / "examples" / chart).glob("*.yaml")):
@@ -129,6 +130,36 @@ def main():
                         jsonschema.Draft202012Validator(
                             schema, registry=registry
                         ).validate(step["config"])
+                if doc["kind"] == "ApplicationSet":
+                    spec = doc["spec"]
+                    expanded = subprocess.run(
+                        ["go", "run", str(ROOT / "tests/expand_appsets.go")],
+                        input=json.dumps(
+                            {
+                                "template": spec["template"],
+                                "elements": spec["generators"][0]["list"]["elements"],
+                            }
+                        ),
+                        text=True,
+                        capture_output=True,
+                        check=True,
+                    )
+                    for app in json.loads(expanded.stdout):
+                        app.update(
+                            apiVersion="argoproj.io/v1alpha1", kind="Application"
+                        )
+                        jsonschema.Draft7Validator(
+                            schemas[(app["apiVersion"], app["kind"])]
+                        ).validate(app)
+                        assert "{{" not in json.dumps(app), (
+                            "unresolved ApplicationSet template"
+                        )
+                        for source in app["spec"]["sources"]:
+                            if "helm" in source:
+                                files = source["helm"]["valueFiles"]
+                                assert len(files) == 3 and len(set(files)) == 3
+                                assert all("//" not in file for file in files)
+                        applications.append(app)
                 if doc["kind"] == "AnalysisTemplate":
                     for metric in doc["spec"]["metrics"]:
                         native.append(
@@ -145,6 +176,17 @@ def main():
         input=yaml.safe_dump_all(native),
         text=True,
         check=True,
+    )
+    names = [app["metadata"]["name"] for app in applications]
+    assert len(names) == len(set(names)), "duplicate generated Application names"
+    assert set(names) == {
+        "example-backend-test",
+        "example-backend-production",
+        "example-worker-test",
+        "example-worker-production",
+    }
+    print(
+        f"Expanded {len(applications)} Application templates using native Go text/template; generated Application schemas valid."
     )
     print(
         f"Validated {count} rendered resources against pinned APIs; native Kargo step configurations validated separately."

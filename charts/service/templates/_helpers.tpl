@@ -49,7 +49,9 @@ app.kubernetes.io/instance: {{ include "mitis.service.name" . }}
 {{- else if hasKey $v "endpoint" -}}
 {{- printf "%s://%s%s%s" ($v.endpoint.scheme | default "http") $v.endpoint.service (ternary (printf ":%v" $v.endpoint.port) "" (hasKey $v.endpoint "port")) ($v.endpoint.path | default "") -}}
 {{- else if hasKey $v "fact" -}}
-{{- required (printf "environment fact %s is missing" $v.fact) (index (.root.Values.facts | default dict) $v.fact) | toString -}}
+{{- $facts := .root.Values.facts | default dict -}}
+{{- if not (hasKey $facts $v.fact) -}}{{ fail (printf "environment fact %s is missing" $v.fact) }}{{- end -}}
+{{- index $facts $v.fact | toString -}}
 {{- else -}}{{ fail "unsupported literal/reference value" }}{{- end -}}
 {{- end -}}
 

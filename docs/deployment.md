@@ -60,6 +60,8 @@ releases:
 
 Always preserve the same explicit `name` across the two releases. Never change an existing release between parts: Helm would interpret omitted resources as deletions. Use splits only where the lifecycle needs them. An independent migration service can use ordinary inputs plus an `after-ready` hook, with its consumers depending on that release.
 
+When an existing scheduled helper must retain a separate release, `application` owns inputs/workload/release jobs and `scheduled` owns only CronJobs. Both read the same complete service definition; schedule the helper release after its application with `needs`. `all` is the unsplit equivalent. These ownership modes are permanent choices for a release, not switches to alternate during upgrades.
+
 `before` maps to pre-install/pre-upgrade hooks; `after-ready` maps to post-install/post-upgrade hooks. Helm must wait for workload readiness before the latter. Hook Jobs are recreated on upgrade. By default failed results remain for diagnosis and successful hooks are cleaned up; `cleanup` can preserve an existing on-completion or next-run policy. Scheduled jobs are ordinary CronJobs, not release hooks.
 
 `needs` orders release commands and propagates failures. It does not prove asynchronous secret/stream reconciliation. Required Secret-key references keep pods from starting until usable inputs exist. Where the service declares controller-created resources that callers require, the owning product's maintained Helmfile composition must add bounded native checks, such as `kubectl wait --for=condition=Ready ... --timeout=...`, after installing the controller/resources. Do not introduce an unbounded watcher or treat submitted custom resources as ready.

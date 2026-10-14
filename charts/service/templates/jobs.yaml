@@ -1,11 +1,14 @@
+{{- include "mitis.service.validate" . -}}
 {{- $root := . -}}
 {{- range $key, $job := .Values.jobs -}}
 {{- $manual := eq ($job.run | default "") "manual" -}}
-{{- if or (and (not $manual) (has $root.Values.render.part (list "all" "runtime"))) (and $manual (eq $root.Values.render.part "task") (eq $root.Values.render.task $key)) -}}
+{{- $selected := and (not $manual) (has $root.Values.render.part (list "all" "runtime")) -}}
+{{- $selected = or $selected (and (not $manual) (not $job.schedule) (eq $root.Values.render.part "application")) (and $job.schedule (eq $root.Values.render.part "scheduled")) (and $manual (eq $root.Values.render.part "task") (eq $root.Values.render.task $key)) -}}
+{{- if $selected -}}
 {{ include "mitis.service.job" (dict "root" $root "job" $job "key" $key "id" (printf "job-%s" $key)) }}
 {{- end -}}
 {{- end -}}
-{{- if and (eq .Values.updates.strategy "canary") (has .Values.render.part (list "all" "runtime")) -}}
+{{- if and (eq .Values.updates.strategy "canary") (has .Values.render.part (list "all" "runtime" "application")) -}}
 {{- $name := include "mitis.service.name" . -}}
 {{- $smoke := deepCopy .Values.updates.smoke -}}
 {{- $_ := set $smoke "run" "after-ready" -}}

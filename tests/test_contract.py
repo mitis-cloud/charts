@@ -57,6 +57,13 @@ def render(chart, *values, success=True):
             return docs
         if not result.returncode:
             raise AssertionError("invalid values were accepted")
+        if (
+            "values don't meet" not in result.stderr
+            and "execution error at" not in result.stderr
+        ):
+            raise AssertionError(
+                f"failure was not contract validation: {result.stderr}"
+            )
         return result.stderr
 
 
@@ -167,6 +174,56 @@ class ServiceContract(unittest.TestCase):
         )
         self.assertEqual(1, sum(d["kind"] == "PersistentVolumeClaim" for d in docs))
 
+    def test_false_facts_and_apex_routes(self):
+        docs = render(
+            self.chart,
+            self.base,
+            {
+                "facts": {"flag": False, "zero": 0},
+                "environment": {"FLAG": {"fact": "flag"}, "ZERO": {"fact": "zero"}},
+                "domain": "example.com",
+                "ports": {"http": 80},
+                "http": {
+                    "exposure": "public",
+                    "subdomain": "",
+                    "priority": 200,
+                    "redirectFromHttp": True,
+                },
+            },
+        )
+        env = resource(docs, "Deployment")["spec"]["template"]["spec"]["containers"][0][
+            "env"
+        ]
+        self.assertEqual(
+            {"FLAG": "false", "ZERO": "0"}, {e["name"]: e["value"] for e in env}
+        )
+        ingress = resource(docs, "Ingress")
+        self.assertEqual("example.com", ingress["spec"]["rules"][0]["host"])
+        self.assertEqual(
+            "200",
+            ingress["metadata"]["annotations"]["alb.ingress.kubernetes.io/group.order"],
+        )
+        self.assertEqual(
+            [{"HTTP": 80}, {"HTTPS": 443}],
+            json.loads(
+                ingress["metadata"]["annotations"][
+                    "alb.ingress.kubernetes.io/listen-ports"
+                ]
+            ),
+        )
+
+    def test_coordinated_jobs_run_after_prior_services(self):
+        docs = render(
+            self.chart,
+            ROOT / "examples/service/jobs.yaml",
+            {"render": {"engine": "argo", "order": 1}},
+        )
+        for doc in docs:
+            wave = int(doc["metadata"]["annotations"]["argocd.argoproj.io/sync-wave"])
+            self.assertGreater(wave, 19)
+            if doc["kind"] == "CronJob":
+                self.assertEqual(110, wave)
+
     def test_invalid_references_and_overlap(self):
         for invalid in [
             {"mounts": {"missing": "/data"}},
@@ -177,6 +234,11 @@ class ServiceContract(unittest.TestCase):
             {"updates": {"strategy": "replace"}, "disruption": {"handover": True}},
             {"updates": {"strategy": "canary"}},
             {"health": {"readiness": {"tcp": "missing"}}},
+            {"workload": "resources", "command": ["silently-ignored"]},
+            {"capacity": {"cpu": "banana"}},
+            {"capacity": {"cpu": -1}},
+            {"jobs": {"cron": {"schedule": "* * * * *", "cleanup": "next-run"}}},
+            {"jobs": {"once": {"run": "before", "history": {"failed": 1}}}},
         ]:
             with self.subTest(invalid=invalid):
                 render(self.chart, self.base, invalid, success=False)
@@ -203,6 +265,18 @@ class ServiceContract(unittest.TestCase):
         self.assertFalse(set(map(identity, inputs)) & set(map(identity, runtime)))
         self.assertEqual(
             set(map(identity, all_docs)), set(map(identity, inputs + runtime))
+        )
+
+    def test_scheduled_helpers_keep_a_separate_release_owner(self):
+        path = ROOT / "examples/service/jobs.yaml"
+        application = render(self.chart, path, {"render": {"part": "application"}})
+        scheduled = render(self.chart, path, {"render": {"part": "scheduled"}})
+        self.assertEqual(["CronJob"], [doc["kind"] for doc in scheduled])
+        combined = application + scheduled
+        identity = lambda doc: (doc["kind"], doc["metadata"]["name"])
+        self.assertEqual(
+            sorted(map(identity, render(self.chart, path))),
+            sorted(map(identity, combined)),
         )
 
     def test_job_gates_and_manual_exclusion(self):
