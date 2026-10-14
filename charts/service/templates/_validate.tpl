@@ -2,7 +2,7 @@
 {{- $v := .Values -}}
 {{- $name := include "mitis.service.name" . -}}
 {{- $identities := dict -}}
-{{- if and (eq $v.workload "resources") (or $v.init $v.sidecars $v.ports $v.health $v.environment $v.files $v.mounts $v.http $v.availability $v.command $v.args $v.identity $v.fileGroup $v.shutdown $v.workingDirectory) -}}
+{{- if and (eq $v.workload "resources") (or $v.init $v.sidecars $v.ports $v.health $v.environment $v.files $v.mounts (and $v.http (not $v.response)) $v.availability $v.command $v.args $v.identity $v.fileGroup $v.shutdown $v.workingDirectory $v.account $v.security $v.discovery (hasKey $v "apiToken")) -}}
 {{- fail "resource-only services declare container inputs on their jobs, not at the root" -}}{{- end -}}
 {{- if or (gt (len $name) 40) (not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $name)) -}}
 {{- fail "service name/release name must be a DNS label of at most 40 characters" -}}{{- end -}}
@@ -17,12 +17,19 @@
 {{- else if $v.updates.smoke -}}{{ fail "updates.smoke requires canary strategy" }}
 {{- end -}}
 {{- if $v.http -}}
-{{- if not (hasKey $v.ports ($v.http.port | default "http")) -}}{{ fail "http.port must identify a declared port" }}{{- end -}}
+{{- if and (not $v.response) (not (hasKey $v.ports ($v.http.port | default "http"))) -}}{{ fail "http.port must identify a declared port" }}{{- end -}}
 {{- if and (not $v.http.hostname) (not $v.domain) -}}{{ fail "http requires hostname or domain" }}{{- end -}}
 {{- if and (eq $v.render.routing "gateway") (or $v.http.healthcheck (hasKey $v.http "priority")) -}}{{ fail "http.healthcheck and http.priority require ingress routing; Gateway implementations own their health policy and route precedence" }}{{- end -}}
 {{- end -}}
+{{- if $v.response -}}
+{{- if or (ne $v.workload "resources") (ne $v.render.routing "ingress") (not $v.http) -}}{{ fail "response requires workload=resources, http, and ingress routing" }}{{- end -}}
+{{- if or $v.http.port $v.http.healthcheck -}}{{ fail "a fixed response has no backend port or healthcheck" }}{{- end -}}
+{{- if gt (len $v.response.body) 1024 -}}{{ fail "response.body exceeds the ALB limit of 1024 bytes" }}{{- end -}}
+{{- end -}}
 {{- $containers := include "mitis.service.containers" . | fromJson -}}
 {{- range $id, $c := $containers -}}
+{{- if and $c.account $v.permissions -}}{{ fail "account consumes an existing service account and cannot be combined with chart-owned permissions" }}{{- end -}}
+{{- if and (eq ($c.security | default "image-defaults") "restricted") (hasKey ($c.identity | default dict) "user") (eq (int $c.identity.user) 0) -}}{{ fail "restricted security cannot run as user 0" }}{{- end -}}
 {{- $remote := false -}}
 {{- range $_, $value := $c.environment -}}
 {{- if and (kindIs "map" $value) (hasKey $value "remoteSecret") -}}{{ $remote = true }}{{- end -}}
@@ -58,6 +65,7 @@
 {{- end -}}
 {{- range $id, $secret := $v.secrets -}}
 {{- include "mitis.service.reserve" (dict "identities" $identities "kind" "Secret" "name" ($secret.name | default $id)) -}}
+{{- if and $secret.templateContext (not $secret.template) -}}{{ fail "secrets.templateContext requires template" }}{{- end -}}
 {{- end -}}
 {{- range $id, $volume := $v.storage -}}
 {{- if eq ($volume.access | default "") "shared" -}}
@@ -75,10 +83,11 @@
 {{- include "mitis.service.reserve" (dict "identities" $identities "kind" "Task" "name" ($job.name | default (printf "%s-%s" $name $id))) -}}
 {{- if and (not $job.run) (not $job.schedule) -}}{{ fail (printf "jobs.%s requires run or schedule" $id) }}{{- end -}}
 {{- if and $job.schedule (or (hasKey $job "order") (hasKey $job "cleanup")) -}}{{ fail "scheduled jobs do not accept release order or cleanup; use history for result retention" }}{{- end -}}
-{{- if and (not $job.schedule) (or (hasKey $job "history") (hasKey $job "startDeadline") (hasKey $job "suspend")) -}}{{ fail "history, startDeadline, and suspend require a scheduled job" }}{{- end -}}
+{{- if and (not $job.schedule) (or (hasKey $job "history") (hasKey $job "startDeadline") (hasKey $job "suspend") (hasKey $job "timeZone")) -}}{{ fail "history, startDeadline, suspend, and timeZone require a scheduled job" }}{{- end -}}
 {{- if and (eq ($job.run | default "") "before") (eq $v.render.engine "helm") (has $v.render.part (list "all" "application")) (gt $inputCount 0) -}}
 {{- fail "Helm before-jobs with managed inputs require stable inputs and runtime releases; see the Helmfile guide" -}}{{- end -}}
 {{- end -}}
+{{- if and $v.updates.smoke (eq ($v.updates.smoke.timeout | default "") "none") -}}{{ fail "canary smoke requires a bounded timeout" }}{{- end -}}
 
 {{- if eq $v.render.part "task" -}}
 {{- $task := required "render.task is required for the task part" $v.render.task -}}

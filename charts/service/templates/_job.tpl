@@ -1,8 +1,11 @@
 {{- define "mitis.service.jobSpec" -}}
 {{- $job := .job -}}
 backoffLimit: {{ if hasKey $job "retries" }}{{ $job.retries }}{{ else }}0{{ end }}
-{{- if or (not $job.schedule) $job.timeout }}
+{{- if and (ne ($job.timeout | default "") "none") (or (not $job.schedule) $job.timeout) }}
 activeDeadlineSeconds: {{ include "mitis.service.seconds" ($job.timeout | default "10m") }}
+{{- end }}
+{{- if regexMatch "^[1-9][0-9]*(s|m|h)$" ($job.cleanup | default "") }}
+ttlSecondsAfterFinished: {{ include "mitis.service.seconds" $job.cleanup }}
 {{- end }}
 template:
   metadata:
@@ -19,6 +22,7 @@ template:
 {{- $run := $job.run | default "after-ready" -}}
 {{- $order := int ($job.order | default 0) -}}
 {{- $cleanup := $job.cleanup | default "on-success" -}}
+{{- $immediate := has $cleanup (list "on-success" "on-completion") -}}
 {{- $wave := add 10 $order -}}{{ if eq $run "before" }}{{ $wave = add -10 $order }}{{ end }}
 ---
 apiVersion: batch/v1
@@ -34,16 +38,19 @@ metadata:
     {{- if eq $root.Values.render.engine "argo" }}
     argocd.argoproj.io/hook: Sync
     {{- include "mitis.service.wave" (dict "root" $root "wave" $wave) | nindent 4 }}
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation{{ if ne $cleanup "next-run" }},HookSucceeded{{ end }}{{ if eq $cleanup "on-completion" }},HookFailed{{ end }}
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation{{ if $immediate }},HookSucceeded{{ end }}{{ if eq $cleanup "on-completion" }},HookFailed{{ end }}
     {{- else }}
     helm.sh/hook: {{ ternary "pre-install,pre-upgrade" "post-install,post-upgrade" (eq $run "before") }}
     helm.sh/hook-weight: {{ $wave | quote }}
-    helm.sh/hook-delete-policy: before-hook-creation{{ if ne $cleanup "next-run" }},hook-succeeded{{ end }}{{ if eq $cleanup "on-completion" }},hook-failed{{ end }}
+    helm.sh/hook-delete-policy: before-hook-creation{{ if $immediate }},hook-succeeded{{ end }}{{ if eq $cleanup "on-completion" }},hook-failed{{ end }}
     {{- end }}
     {{- end }}
 spec:
   {{- if $job.schedule }}
   schedule: {{ $job.schedule | quote }}
+  {{- with $job.timeZone }}
+  timeZone: {{ . | quote }}
+  {{- end }}
   concurrencyPolicy: Forbid
   suspend: {{ $job.suspend | default false }}
   {{- $history := $job.history | default dict }}

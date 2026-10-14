@@ -111,6 +111,141 @@ class ServiceContract(unittest.TestCase):
             with self.subTest(invalid=invalid):
                 render(self.chart, self.base, invalid, success=False)
 
+    def test_fixed_response_is_bounded_and_ingress_only(self):
+        values = ROOT / "examples/service/response.yaml"
+        docs = render(self.chart, values)
+        self.assertEqual([d["kind"] for d in docs], ["Ingress"])
+        ingress = docs[0]
+        action = json.loads(
+            ingress["metadata"]["annotations"][
+                "alb.ingress.kubernetes.io/actions.maintenance"
+            ]
+        )
+        self.assertEqual(action["FixedResponseConfig"]["StatusCode"], "503")
+        self.assertEqual(
+            ingress["spec"]["rules"][0]["http"]["paths"][0]["backend"]["service"],
+            {"name": "maintenance", "port": {"name": "use-annotation"}},
+        )
+        for invalid in [
+            {"response": {"status": 302}},
+            {"response": {"body": "é" * 600}},
+            {"render": {"routing": "gateway"}},
+            {"http": {"port": "http"}},
+            {"workload": "deployment", **self.base},
+        ]:
+            with self.subTest(invalid=invalid):
+                render(self.chart, values, invalid, success=False)
+
+    def test_secret_context_is_typed_data_not_template_code(self):
+        literal = '"{{ fail "not code" }}"\n\\'
+        values = {
+            "workload": "resources",
+            "facts": {"enabled": False, "count": 0},
+            "secrets": {
+                "config": {
+                    "values": {"password": "password"},
+                    "templateContext": {
+                        "enabled": {"fact": "enabled"},
+                        "count": {"fact": "count"},
+                        "literal": literal,
+                    },
+                    "template": {
+                        "file": "{{ if $context.enabled }}on{{ else }}off{{ end }}|{{ $context.count }}|{{ $context.literal }}|{{ .password }}"
+                    },
+                }
+            },
+        }
+        secret = resource(render(self.chart, values), "ExternalSecret")
+        output = subprocess.run(
+            ["go", "run", str(ROOT / "tests/expand_templates.go")],
+            input=json.dumps(
+                {
+                    "template": secret["spec"]["target"]["template"]["data"],
+                    "elements": [{"password": "fixture"}],
+                }
+            ),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        self.assertEqual(
+            json.loads(output.stdout), [{"file": f"off|0|{literal}|fixture"}]
+        )
+        render(self.chart, values, {"facts": {"enabled": None}}, success=False)
+        render(
+            self.chart,
+            values,
+            {"secrets": {"config": {"template": None}}},
+            success=False,
+        )
+
+    def test_explicit_job_security_and_retention(self):
+        docs = render(self.chart, ROOT / "examples/service/scheduled-connector.yaml")
+        cron = resource(docs, "CronJob")
+        self.assertEqual(cron["spec"]["timeZone"], "Etc/UTC")
+        job = cron["spec"]["jobTemplate"]["spec"]
+        self.assertEqual(job["activeDeadlineSeconds"], 240)
+        pod = job["template"]["spec"]
+        self.assertEqual(pod["nodeSelector"], {"kubernetes.io/arch": "amd64"})
+        self.assertFalse(pod["automountServiceAccountToken"])
+        self.assertEqual(
+            pod["securityContext"],
+            {"fsGroup": 65532, "seccompProfile": {"type": "RuntimeDefault"}},
+        )
+        self.assertEqual(
+            pod["containers"][0]["securityContext"],
+            {
+                "runAsUser": 65532,
+                "runAsGroup": 65532,
+                "runAsNonRoot": True,
+                "readOnlyRootFilesystem": True,
+                "allowPrivilegeEscalation": False,
+                "capabilities": {"drop": ["ALL"]},
+                "seccompProfile": {"type": "RuntimeDefault"},
+            },
+        )
+        values = {
+            "workload": "resources",
+            "jobs": {
+                "configure": {
+                    "image": self.base["image"],
+                    "run": "after-ready",
+                    "timeout": "none",
+                    "cleanup": "5m",
+                    "discovery": "environment",
+                    "account": "cloud-worker",
+                }
+            },
+        }
+        job = resource(render(self.chart, values), "Job")
+        self.assertNotIn("activeDeadlineSeconds", job["spec"])
+        self.assertEqual(job["spec"]["ttlSecondsAfterFinished"], 300)
+        self.assertEqual(
+            job["metadata"]["annotations"]["helm.sh/hook-delete-policy"],
+            "before-hook-creation",
+        )
+        self.assertTrue(job["spec"]["template"]["spec"]["enableServiceLinks"])
+        self.assertEqual(
+            job["spec"]["template"]["spec"]["serviceAccountName"], "cloud-worker"
+        )
+        render(
+            self.chart,
+            self.base,
+            {"security": "restricted", "identity": {"user": 0}},
+            success=False,
+        )
+        render(
+            self.chart,
+            self.base,
+            {
+                "account": "existing",
+                "permissions": [
+                    {"group": "", "resources": ["pods"], "actions": ["get"]}
+                ],
+            },
+            success=False,
+        )
+
     def test_zero_and_optional_availability(self):
         for replicas in [0, 1, 3]:
             deployment = resource(

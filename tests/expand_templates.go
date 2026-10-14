@@ -11,7 +11,13 @@ import (
 func expand(value any, params map[string]any) (any, error) {
 	switch value := value.(type) {
 	case string:
-		t, err := template.New("application").Option("missingkey=error").Parse(value)
+		t, err := template.New("resource").Funcs(template.FuncMap{
+			"fromJson": func(text string) (any, error) {
+				var value any
+				err := json.Unmarshal([]byte(text), &value)
+				return value, err
+			},
+		}).Option("missingkey=error").Parse(value)
 		if err != nil {
 			return nil, err
 		}

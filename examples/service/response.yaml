@@ -1,0 +1,12 @@
+name: maintenance
+workload: resources
+domain: example.com
+http:
+  exposure: public
+  subdomain: api
+  paths: [/__maintenance__]
+  priority: 1
+response:
+  status: 503
+  contentType: text/html
+  body: '<h1>Scheduled maintenance</h1><p>Please try again later.</p>'

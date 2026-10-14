@@ -133,7 +133,7 @@ def main():
                 if doc["kind"] == "ApplicationSet":
                     spec = doc["spec"]
                     expanded = subprocess.run(
-                        ["go", "run", str(ROOT / "tests/expand_appsets.go")],
+                        ["go", "run", str(ROOT / "tests/expand_templates.go")],
                         input=json.dumps(
                             {
                                 "template": spec["template"],

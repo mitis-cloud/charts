@@ -11,18 +11,35 @@
 {{- range $name, $_ := $container.mounts -}}{{ $_ := set $volumes $name (index $root.Values.storage $name) }}{{- end -}}
 {{- end -}}
 restartPolicy: {{ .restart }}
-enableServiceLinks: false
-terminationGracePeriodSeconds: {{ $c.shutdown | default 30 }}
-{{- if hasKey $c "fileGroup" }}
-securityContext:
-  fsGroup: {{ $c.fileGroup }}
+enableServiceLinks: {{ eq ($c.discovery | default "dns") "environment" }}
+{{- if hasKey $c "apiToken" }}
+automountServiceAccountToken: {{ $c.apiToken }}
 {{- end }}
-{{- if $root.Values.permissions }}
+terminationGracePeriodSeconds: {{ $c.shutdown | default 30 }}
+{{- if or (hasKey $c "fileGroup") (eq ($c.security | default "image-defaults") "restricted") }}
+securityContext:
+  {{- if hasKey $c "fileGroup" }}
+  fsGroup: {{ $c.fileGroup }}
+  {{- end }}
+  {{- if eq ($c.security | default "image-defaults") "restricted" }}
+  seccompProfile: {type: RuntimeDefault}
+  {{- end }}
+{{- end }}
+{{- if $c.account }}
+serviceAccountName: {{ $c.account }}
+{{- else if $root.Values.permissions }}
 serviceAccountName: {{ include "mitis.service.name" $root }}
 {{- end }}
-{{- if ne $root.Values.placement "any" }}
+{{- if or (ne $root.Values.placement "any") $root.Values.architecture }}
 nodeSelector:
+  {{- if $root.Values.architecture }}
+  kubernetes.io/arch: {{ $root.Values.architecture }}
+  {{- end }}
+  {{- if ne $root.Values.placement "any" }}
   env: {{ $root.Values.placement }}
+  {{- end }}
+{{- end }}
+{{- if ne $root.Values.placement "any" }}
 tolerations:
   - key: env
     operator: Equal

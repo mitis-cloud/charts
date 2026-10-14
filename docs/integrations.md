@@ -22,7 +22,7 @@ The new tool/controller references were checked against current stable releases 
 
 `render.routing: ingress` targets the AWS Load Balancer Controller's native facilities. Install an IngressClass named `<namespace>-public` and/or `<namespace>-private`, with IngressClassParams retaining that environment's actual group, scheme, WAF, and load-balancer settings. Certificate discovery uses the declared hosts and suitable issued ACM certificates; HTTPS listeners are explicitly requested by the chart. The class parameters' listener attributes alone do not create a listener.
 
-Domains and group identities remain infrastructure-owned. Never reconstruct an environment-specific ALB group from an assumed cluster naming rule. Before adoption, compare effective route ordering, host/path routing, TLS, certificate coverage, WAF, and attributes to the existing resources. Controller readiness at this boundary is not proven by a rendered Ingress.
+Domains and group identities remain infrastructure-owned. Never reconstruct an environment-specific ALB group from an assumed cluster naming rule. Before adoption, compare effective route ordering, host/path routing, TLS, certificate coverage, WAF, and attributes to the existing resources. Controller readiness at this boundary is not proven by a rendered Ingress. Fixed `response` services use ALB-native actions; they do not provision a dummy backend and cannot be selected in Gateway mode.
 
 ## Gateway mode and canary
 
@@ -53,6 +53,8 @@ Existing installations need the **0.4.4 CRD upgrade explicitly**; Helm does not 
 `secretStore` identifies an existing ClusterSecretStore (default `aws-ssm`); `secretPrefix` carries the authoritative remote-key scope. ESO must be authorized to read it. Its asynchronous synchronization supplies required Secret keys. Reloader must be installed with support for the selected workload kind if `updates.reload` is enabled. Native checksums handle ordinary declared file changes; external secret values are never read by Helm.
 
 ## Availability zones
+
+`placement` refers to an existing infrastructure-owned pool through its `env` node label and matching NoSchedule taint. Custom pool names are supported; the chart does not create pools. `architecture` can additionally constrain single-platform images. Infrastructure also owns accounts selected with `account`, their cloud permissions, and any required workload-identity admission/token injection. The chart does not manufacture IAM bindings or cloud credentials.
 
 `availability.zones` generates strict native topology spreading with `maxSkew: 1`, `minDomains`, and `DoNotSchedule`. Revision labels distinguish rolling/canary generations. Canary keeps a full candidate replica pool while the stable pool serves, so additional capacity is required.
 

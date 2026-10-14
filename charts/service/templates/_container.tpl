@@ -103,13 +103,22 @@ volumeMounts:
     readOnly: true
   {{- end }}
 {{- end }}
-{{- with $c.identity }}
+{{- if or $c.identity (eq ($c.security | default "image-defaults") "restricted") }}
 securityContext:
+  {{- with $c.identity }}
   {{- if hasKey . "user" }}
   runAsUser: {{ .user }}
   {{- end }}
   {{- if hasKey . "group" }}
   runAsGroup: {{ .group }}
+  {{- end }}
+  {{- end }}
+  {{- if eq ($c.security | default "image-defaults") "restricted" }}
+  runAsNonRoot: true
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities: {drop: [ALL]}
+  seccompProfile: {type: RuntimeDefault}
   {{- end }}
 {{- end }}
 {{- end -}}

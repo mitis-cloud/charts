@@ -52,7 +52,17 @@ spec:
       engineVersion: v2
       mergePolicy: Merge
       data:
-        {{- toYaml . | nindent 8 }}
+        {{- $context := dict -}}
+        {{- range $key, $value := $s.templateContext -}}
+        {{- if kindIs "map" $value -}}
+        {{- if not (hasKey $root.Values.facts $value.fact) -}}{{ fail (printf "template context fact %s is missing" $value.fact) }}{{- end -}}
+        {{- $value = index $root.Values.facts $value.fact -}}
+        {{- end -}}
+        {{- $_ := set $context $key $value -}}
+        {{- end -}}
+        {{- range $key, $body := . }}
+        {{ $key | quote }}: {{ if $s.templateContext }}{{ printf "{{ $context := %q | fromJson }}%s" (toJson $context) $body | quote }}{{ else }}{{ $body | quote }}{{ end }}
+        {{- end }}
     {{- end }}
   data:
     {{- range $key, $remote := $s.values }}
