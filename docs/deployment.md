@@ -83,7 +83,7 @@ Argo's Sync hooks are deliberate: PreSync would run before newly created ordinar
 
 Within that Application, `render.order` assigns a service an ordering slot (0–100). Its inputs, before-jobs, runtime, and after-jobs occupy waves `100 × order - 20`, `-10..-1`, `0`, and `10..19` respectively. A service in slot 1 therefore waits for slot 0's after-jobs. Delivery sets the slot from each service's `order`. Vendor dependencies also need their native resource annotations aligned to the intended slot; a helper's slot cannot change a sibling vendor chart's resources. Helmfile uses explicit `needs` between releases instead.
 
-Argo health checks must cover selected custom resources. ExternalSecret readiness is asynchronous and does not promise a fresh provider read for each sync. Product resources with observed generations, such as NACK Streams, need readiness checks that require current-generation status; their wrapper documents that prerequisite. The service chart does not install controller health customizations.
+Argo health checks must cover selected custom resources. ExternalSecret readiness is asynchronous and does not promise a fresh provider read for each sync. Product resources with observed generations need readiness checks that require current-generation status; those checks belong to the product's deployment integration. The service chart does not install controller health customizations.
 
 The delivery chart generates ordinary-apply Applications with `RespectIgnoreDifferences=true`. Do not add Force/Replace synchronization to protected workloads. Install the documented capacity and progressive-routing field ownership together with the corresponding service capabilities.
 
@@ -101,8 +101,8 @@ helm upgrade --install api-reset oci://ghcr.io/mitis-cloud/charts/service \
 
 This is an explicit operation, not an action for routine CI synchronization. Destructive reset semantics belong to the application command and the caller's deliberate selection.
 
-## Vendor composition
+## Native vendor charts
 
-A project wrapper can depend on a vendor chart as `server` and this chart as `helpers`. Its one file contains `server: {...vendor-native values...}` and `helpers: {...service values...}`. Native dependency aliasing performs the scoping; no custom loader or Helmfile-only subsection extraction is necessary.
+Consume native vendor charts directly with their documented values. A dedicated companion using `service` has its own values and declares its image, environment and storage explicitly. No wrapper or unified vendor/helper file is required.
 
-Sibling dependencies do not inherit one another's images or environment. Declare helper inputs explicitly. A wrapper is responsible for actual product lifecycle, dependencies, readiness, and typed product resources. Dependencies alone are not a readiness-ordered release graph. Keep wrapper versions and native dependency locks in the wrapper's repository.
+Helmfile can order companion releases through `needs`. With the delivery chart, set `serviceScopes: []` for a direct vendor source so service-specific render parameters are not injected into it. Argo waves order resources only within one Application; a service helper's ordering slot does not annotate a vendor chart's resources. Preserve the product's native readiness and lifecycle requirements explicitly.

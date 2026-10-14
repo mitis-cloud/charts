@@ -51,7 +51,7 @@ Values are direct and typed. Unknown fields fail validation. Strings are literal
 
 Use chart defaults → canonical service YAML → environment defaults → service/environment overrides. All first-party layers use the same vocabulary. Maps merge; lists replace. Set an environment-variable entry to `null` to omit it. Files supplied through Argo must be plain YAML; Argo does not evaluate Helmfile `.gotmpl` files.
 
-Retain vendor charts. When a product has dedicated helpers, a thin project-owned wrapper can depend on the vendor chart and `service` under ordinary aliases. Its single values file contains those native dependency scopes. The reusable service chart has no vendor or branding namespace.
+Consume native vendor charts directly with their own values. A companion workload can use `service` separately where needed; using this toolkit does not require wrapping vendor products or combining their values into one file. The reusable service chart has no vendor or branding namespace.
 
 ## Develop and verify
 
