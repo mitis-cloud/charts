@@ -1,0 +1,10 @@
+helmDefaults:
+  wait: true
+  waitForJobs: true
+  timeout: 900
+releases:
+  - name: api
+    namespace: example
+    chart: ../charts/service
+    values:
+      - service/api.yaml

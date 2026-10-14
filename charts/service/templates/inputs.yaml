@@ -1,0 +1,134 @@
+{{- if has .Values.render.part (list "all" "inputs") -}}
+{{- $root := . -}}
+{{- $name := include "mitis.service.name" . -}}
+{{- $secrets := deepCopy .Values.secrets -}}
+{{- range $id, $c := (include "mitis.service.containers" . | fromJson) -}}
+{{- $remote := dict -}}
+{{- range $key, $value := $c.environment -}}
+{{- if and (kindIs "map" $value) (hasKey $value "remoteSecret") -}}{{ $_ := set $remote $key $value.remoteSecret }}{{- end -}}
+{{- end -}}
+{{- if $remote -}}
+{{- $target := printf "%s-secrets" (include "mitis.service.containerName" (dict "root" $root "id" $id)) -}}
+{{- if hasKey $secrets $target -}}{{ fail (printf "duplicate secret identity %s" $target) }}{{- end -}}
+{{- $_ := set $secrets $target (dict "name" $target "values" $remote) -}}
+{{- end -}}
+{{- range $key, $file := $c.files -}}
+{{- if hasKey $file "content" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $file.name | default (printf "%s-%s-file-%s" $name $id $key) }}
+  labels:
+    {{- include "mitis.service.labels" $root | nindent 4 }}
+  annotations:
+    {{- include "mitis.service.wave" (dict "root" $root "wave" -20) | nindent 4 }}
+data:
+  {{ $file.key | default $key }}: {{ $file.content | quote }}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- range $id, $s := $secrets }}
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: {{ $s.name | default $id }}
+  labels:
+    {{- include "mitis.service.labels" $root | nindent 4 }}
+  annotations:
+    {{- include "mitis.service.wave" (dict "root" $root "wave" -20) | nindent 4 }}
+spec:
+  refreshInterval: {{ $s.refresh | default "1h" }}
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: {{ $root.Values.secretStore }}
+  target:
+    name: {{ $s.name | default $id }}
+    creationPolicy: Owner
+    {{- with $s.template }}
+    template:
+      engineVersion: v2
+      mergePolicy: Merge
+      data:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+  data:
+    {{- range $key, $remote := $s.values }}
+    - secretKey: {{ $key | quote }}
+      remoteRef:
+        {{- if kindIs "string" $remote }}
+        key: {{ printf "%s%s" $root.Values.secretPrefix $remote | quote }}
+        {{- else }}
+        key: {{ ternary $remote.key (printf "%s%s" $root.Values.secretPrefix $remote.key) ($remote.absolute | default false) | quote }}
+        {{- with $remote.property }}
+        property: {{ . | quote }}
+        {{- end }}
+        {{- end }}
+    {{- end }}
+{{- end }}
+{{- range $id, $volume := .Values.storage }}
+{{- if eq ($volume.access | default "") "shared" }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $volume.name | default (printf "%s-%s" $name $id) }}
+  labels:
+    {{- include "mitis.service.labels" $root | nindent 4 }}
+  annotations:
+    {{- if or (not (hasKey $volume "retain")) $volume.retain }}
+    helm.sh/resource-policy: keep
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+    {{- end }}
+    {{- include "mitis.service.wave" (dict "root" $root "wave" -20) | nindent 4 }}
+spec:
+  accessModes: [ReadWriteMany]
+  volumeMode: Filesystem
+  storageClassName: {{ required "sharedStorage must identify the environment's shared-filesystem class" $root.Values.sharedStorage }}
+  resources:
+    requests:
+      storage: {{ $volume.size | default "1Gi" | quote }}
+{{- end }}
+{{- end }}
+{{- if .Values.permissions }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  annotations:
+    {{- include "mitis.service.wave" (dict "root" $root "wave" -20) | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}
+  annotations:
+    {{- include "mitis.service.wave" (dict "root" $root "wave" -20) | nindent 4 }}
+rules:
+  {{- range .Values.permissions }}
+  - apiGroups: [{{ .group | quote }}]
+    resources: {{ toJson .resources }}
+    verbs: {{ toJson .actions }}
+    {{- with .names }}
+    resourceNames: {{ toJson . }}
+    {{- end }}
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}
+  annotations:
+    {{- include "mitis.service.wave" (dict "root" $root "wave" -20) | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- end }}

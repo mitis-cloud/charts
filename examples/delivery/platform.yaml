@@ -1,0 +1,31 @@
+project: example
+git:
+  repository: https://github.com/example/platform.git
+environments:
+  test:
+    cluster: test
+    namespace: example-test
+    charts: {service: 0.1.0}
+    promotion: automatic
+  production:
+    cluster: production
+    namespace: example
+    charts: {service: 0.1.0}
+    upstream: [test]
+    promotion: manual
+releaseUnits:
+  backend:
+    services:
+      api:
+        chart: service
+        order: 1
+        images: {image.digest: ghcr.io/example/backend}
+        capacityTargets: [{name: api, kind: Rollout}]
+      migrations:
+        chart: service
+        images: {image.digest: ghcr.io/example/database}
+  worker:
+    services:
+      worker:
+        chart: service
+        images: {image.digest: ghcr.io/example/backend}

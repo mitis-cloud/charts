@@ -1,0 +1,35 @@
+# See README.md and values.schema.json for the complete contract.
+name: ''
+workload: deployment
+image: {}
+capacity:
+  instances: 1
+  cpu: 100m
+  memory: 128Mi
+  memoryLimit: 256Mi
+ports: {}
+environment: {}
+files: {}
+mounts: {}
+storage: {}
+init: {}
+sidecars: {}
+jobs: {}
+secrets: {}
+domain: ''
+secretPrefix: ''
+secretStore: aws-ssm
+placement: any
+updates:
+  strategy: rolling
+  reload: true
+  reloadSecrets: true
+disruption:
+  handover: false
+# Orchestration selects stable owners; service authors normally omit this.
+render:
+  engine: helm
+  part: all
+  routing: ingress
+  order: 0
+  task: ''

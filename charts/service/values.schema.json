@@ -1,0 +1,226 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Mitis service",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "name": {"type": "string", "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?)?$", "maxLength": 40, "description": "Stable service identity; defaults to the release name. Keep it fixed across rendering phases."},
+    "workload": {"enum": ["deployment", "resources"], "description": "Run a continuous service or only its explicitly declared resources/jobs. Stateful workloads are roadmap-only."},
+    "image": {"$ref": "#/definitions/image"},
+    "command": {"$ref": "#/definitions/strings"},
+    "args": {"$ref": "#/definitions/strings"},
+    "workingDirectory": {"$ref": "#/definitions/path"},
+    "capacity": {"$ref": "#/definitions/capacity"},
+    "availability": {"type": "object", "additionalProperties": false, "required": ["zones"], "properties": {"zones": {"type": "integer", "minimum": 2, "description": "Strict eligible-zone spread; no automatic relaxation during zone loss."}}},
+    "ports": {"$ref": "#/definitions/ports"},
+    "http": {"$ref": "#/definitions/http"},
+    "health": {"$ref": "#/definitions/health"},
+    "environment": {"$ref": "#/definitions/environment"},
+    "files": {"$ref": "#/definitions/files"},
+    "mounts": {"$ref": "#/definitions/mounts"},
+    "identity": {"$ref": "#/definitions/identity"},
+    "shutdown": {"type": "integer", "minimum": 1, "description": "Graceful shutdown budget in seconds."},
+    "fileGroup": {"type": "integer", "minimum": 0, "description": "Group ID used for writable pod volumes."},
+    "domain": {"type": "string"},
+    "sharedStorage": {"$ref": "#/definitions/name", "description": "Existing shared-filesystem storage class, supplied once by environment defaults. Required when provisioning shared volumes."},
+    "secretPrefix": {"type": "string", "description": "Prefix prepended to remote-secret names. Secret values never belong here."},
+    "secretStore": {"$ref": "#/definitions/name", "description": "Existing cluster secret-store identity supplied by environment composition."},
+    "facts": {"type": "object", "additionalProperties": {"type": ["string", "number", "boolean"]}, "description": "Authoritative application environment facts referenced by name; not a manifest or template interface."},
+    "placement": {"enum": ["any", "spot", "stable"], "description": "Use the environment's supported workload tier; any adds no placement constraint."},
+    "updates": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "strategy": {"enum": ["rolling", "replace", "canary"]},
+        "reload": {"type": "boolean", "description": "Replace instances when declared configuration or synchronized Secrets change."},
+        "reloadSecrets": {"type": "boolean", "description": "With reload enabled, also react to synchronized Secret changes. Disable explicitly to preserve configuration-only replacement."},
+        "restart": {"type": "string", "description": "Explicit rollout token supplied by the deployment operation; no render-time clock."},
+        "smoke": {"allOf": [{"$ref": "#/definitions/job"}, {"required": ["command", "timeout", "capacity"], "not": {"anyOf": [{"required": ["run"]}, {"required": ["schedule"]}, {"required": ["order"]}, {"required": ["suspend"]}, {"required": ["name"]}]}}]}
+      }
+    },
+    "disruption": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "handover": {"type": "boolean"},
+        "maxWait": {"$ref": "#/definitions/duration"},
+        "name": {"$ref": "#/definitions/name"}
+      }
+    },
+    "storage": {
+      "type": "object", "propertyNames": {"$ref": "#/definitions/name"},
+      "additionalProperties": {
+        "oneOf": [
+          {"type": "object", "additionalProperties": false, "required": ["access"], "properties": {
+            "access": {"const": "shared"}, "name": {"$ref": "#/definitions/name"},
+            "size": {"$ref": "#/definitions/quantity", "description": "PVC request metadata; not an EFS quota."},
+            "retain": {"type": "boolean", "description": "Retain the claim on chart removal; defaults to true."}
+          }},
+          {"type": "object", "additionalProperties": false, "required": ["existing"], "properties": {"existing": {"$ref": "#/definitions/name"}}},
+          {"type": "object", "additionalProperties": false, "required": ["temporary"], "properties": {
+            "temporary": {"const": true}, "medium": {"enum": ["disk", "memory"]},
+            "sizeLimit": {"$ref": "#/definitions/quantity", "description": "Workspace limit, not reserved capacity. Memory-backed contents count against memory."}
+          }}
+        ]
+      }
+    },
+    "init": {"$ref": "#/definitions/containers"},
+    "sidecars": {"$ref": "#/definitions/containers"},
+    "jobs": {"type": "object", "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {"$ref": "#/definitions/job"}},
+    "secrets": {
+      "type": "object", "propertyNames": {"$ref": "#/definitions/name"},
+      "additionalProperties": {
+        "type": "object", "additionalProperties": false, "required": ["values"],
+        "properties": {
+          "name": {"$ref": "#/definitions/name"},
+          "refresh": {"$ref": "#/definitions/duration"},
+          "values": {"type": "object", "minProperties": 1, "additionalProperties": {"$ref": "#/definitions/remote"}},
+          "template": {"type": "object", "additionalProperties": {"type": "string"}, "description": "ESO v2 templates, evaluated only by External Secrets. Strings are never Helm templates."}
+        }
+      }
+    },
+    "permissions": {
+      "type": "array", "items": {
+        "type": "object", "additionalProperties": false, "required": ["group", "resources", "actions"],
+        "properties": {
+          "group": {"type": "string"}, "resources": {"$ref": "#/definitions/strings"},
+          "actions": {"type": "array", "items": {"enum": ["get", "list", "watch", "create", "update", "patch", "delete"]}},
+          "names": {"$ref": "#/definitions/strings"}
+        }
+      }, "description": "Namespace-scoped API permissions for an actual controller/helper requirement. Never grants cluster permissions."
+    },
+    "render": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "engine": {"enum": ["helm", "argo"]},
+        "part": {"enum": ["all", "inputs", "runtime", "task"]},
+        "routing": {"enum": ["ingress", "gateway"]},
+        "order": {"type": "integer", "minimum": 0, "maximum": 100, "description": "Native Argo ordering between coordinated services; each slot contains inputs, before-jobs, runtime, and after-jobs."},
+        "task": {"type": "string"}
+      }, "description": "Finite orchestration selectors; every part must have a stable owner. Do not switch parts on an existing Helm release."
+    },
+    "global": {"type": "object", "additionalProperties": false, "description": "Helm injects an empty global object into dependencies. No public fields are accepted here."}
+  },
+  "definitions": {
+    "name": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", "maxLength": 63},
+    "path": {"type": "string", "pattern": "^/"},
+    "duration": {"type": "string", "pattern": "^[1-9][0-9]*(s|m|h)$"},
+    "quantity": {"type": "string", "pattern": "^[0-9]+([.][0-9]+)?(Ei|Pi|Ti|Gi|Mi|Ki|E|P|T|G|M|k|m)?$"},
+    "strings": {"type": "array", "items": {"type": "string"}},
+    "image": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "repository": {"type": "string", "minLength": 1, "pattern": "^[^ @]+$"},
+        "tag": {"type": "string", "minLength": 1},
+        "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "pullPolicy": {"enum": ["Always", "IfNotPresent", "Never"]}
+      }, "description": "Helpers inherit the entire main image unless this object is present. Digest takes precedence over tag."
+    },
+    "capacity": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "instances": {"type": "integer", "minimum": 0, "maximum": 2147483647},
+        "cpu": {"type": ["string", "number"]},
+        "memory": {"$ref": "#/definitions/quantity"},
+        "cpuLimit": {"type": ["string", "number"]},
+        "memoryLimit": {"$ref": "#/definitions/quantity"}
+      }, "description": "Baseline instances, scheduling reservations, and ceilings. CPU has no default ceiling."
+    },
+    "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+    "ports": {
+      "type": "object", "propertyNames": {"type": "string", "pattern": "^[a-z]([-a-z0-9]*[a-z0-9])?$", "maxLength": 15},
+      "additionalProperties": {"oneOf": [
+        {"$ref": "#/definitions/port"},
+        {"type": "object", "additionalProperties": false, "required": ["target", "listen"], "properties": {"target": {"$ref": "#/definitions/port"}, "listen": {"$ref": "#/definitions/port"}}}
+      ]}, "description": "Named listening ports. Simple http exposes port 80 internally; other simple ports expose their own number."
+    },
+    "http": {
+      "type": "object", "additionalProperties": false, "required": ["exposure"],
+      "properties": {
+        "exposure": {"enum": ["public", "private"]}, "hostname": {"type": "string", "minLength": 1},
+        "subdomain": {"type": "string"}, "aliases": {"$ref": "#/definitions/strings"},
+        "port": {"type": "string"}, "paths": {"type": "array", "minItems": 1, "items": {"$ref": "#/definitions/path"}},
+        "healthcheck": {"type": "object", "additionalProperties": false, "properties": {
+          "path": {"$ref": "#/definitions/path"}, "successCodes": {"type": "array", "minItems": 1, "items": {"type": "integer", "minimum": 100, "maximum": 599}}
+        }}
+      }
+    },
+    "health": {"type": "object", "additionalProperties": false, "properties": {
+      "startup": {"$ref": "#/definitions/probe"}, "readiness": {"$ref": "#/definitions/probe"}, "liveness": {"$ref": "#/definitions/probe"}
+    }},
+    "probe": {
+      "type": "object", "additionalProperties": false,
+      "oneOf": [{"required": ["http"], "not": {"required": ["tcp"]}}, {"required": ["tcp"], "not": {"required": ["http"]}}],
+      "properties": {
+        "http": {"$ref": "#/definitions/path"}, "tcp": {"type": ["string", "integer"]}, "port": {"type": ["string", "integer"]},
+        "headers": {"type": "object", "additionalProperties": {"type": "string"}},
+        "delay": {"type": "integer", "minimum": 0}, "interval": {"type": "integer", "minimum": 1},
+        "timeout": {"type": "integer", "minimum": 1}, "failures": {"type": "integer", "minimum": 1}
+      }
+    },
+    "remote": {"oneOf": [
+      {"type": "string", "minLength": 1},
+      {"type": "object", "additionalProperties": false, "required": ["key"], "properties": {"key": {"type": "string", "minLength": 1}, "property": {"type": "string"}, "absolute": {"type": "boolean"}}}
+    ]},
+    "secret": {"type": "object", "additionalProperties": false, "required": ["name", "key"], "properties": {"name": {"$ref": "#/definitions/name"}, "key": {"type": "string", "minLength": 1}}},
+    "environment": {
+      "type": "object", "propertyNames": {"pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+      "additionalProperties": {"oneOf": [
+        {"type": ["string", "number", "boolean", "null"]},
+        {"type": "object", "additionalProperties": false, "required": ["remoteSecret"], "properties": {"remoteSecret": {"$ref": "#/definitions/remote"}}},
+        {"type": "object", "additionalProperties": false, "required": ["secret"], "properties": {"secret": {"$ref": "#/definitions/secret"}}},
+        {"type": "object", "additionalProperties": false, "required": ["instance"], "properties": {"instance": {"enum": ["name", "namespace", "ip"]}}},
+        {"type": "object", "additionalProperties": false, "required": ["fact"], "properties": {"fact": {"type": "string", "minLength": 1}}},
+        {"type": "object", "additionalProperties": false, "required": ["url"], "properties": {"url": {
+          "type": "object", "additionalProperties": false, "properties": {"hostname": {"type": "string"}, "subdomain": {"type": "string"}, "path": {"$ref": "#/definitions/path"}, "scheme": {"enum": ["http", "https"]}}
+        }}},
+        {"type": "object", "additionalProperties": false, "required": ["endpoint"], "properties": {"endpoint": {
+          "type": "object", "additionalProperties": false, "required": ["service"], "properties": {"service": {"$ref": "#/definitions/name"}, "port": {"$ref": "#/definitions/port"}, "path": {"$ref": "#/definitions/path"}, "scheme": {"enum": ["http", "https"]}}
+        }}}
+      ]}
+    },
+    "files": {"type": "object", "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {
+      "type": "object", "additionalProperties": false, "required": ["path"],
+      "oneOf": [{"required": ["content"], "not": {"required": ["secret"]}}, {"required": ["secret"], "not": {"required": ["content"]}}],
+      "properties": {
+        "path": {"$ref": "#/definitions/path"}, "content": {"type": "string"}, "secret": {"$ref": "#/definitions/secret"},
+        "name": {"$ref": "#/definitions/name"}, "key": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$"},
+        "mode": {"type": "integer", "minimum": 0, "maximum": 511}
+      }
+    }},
+    "mounts": {"type": "object", "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {"oneOf": [
+      {"$ref": "#/definitions/path"},
+      {"type": "object", "additionalProperties": false, "required": ["path"], "properties": {
+        "path": {"$ref": "#/definitions/path"}, "readOnly": {"type": "boolean"},
+        "subdirectory": {"type": "string", "minLength": 1, "pattern": "^[^/].*"}
+      }}
+    ]}},
+    "identity": {"type": "object", "additionalProperties": false, "properties": {"user": {"type": "integer", "minimum": 0}, "group": {"type": "integer", "minimum": 0}}},
+    "containers": {"type": "object", "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {"$ref": "#/definitions/container"}},
+    "container": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "image": {"$ref": "#/definitions/image"}, "command": {"$ref": "#/definitions/strings"}, "args": {"$ref": "#/definitions/strings"},
+        "workingDirectory": {"$ref": "#/definitions/path"}, "capacity": {"$ref": "#/definitions/containerCapacity"}, "ports": {"$ref": "#/definitions/ports"},
+        "environment": {"$ref": "#/definitions/environment"}, "health": {"$ref": "#/definitions/health"},
+        "files": {"$ref": "#/definitions/files"}, "mounts": {"$ref": "#/definitions/mounts"}, "identity": {"$ref": "#/definitions/identity"}
+      }
+    },
+    "job": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "name": {"$ref": "#/definitions/name"}, "image": {"$ref": "#/definitions/image"},
+        "command": {"$ref": "#/definitions/strings"}, "args": {"$ref": "#/definitions/strings"}, "workingDirectory": {"$ref": "#/definitions/path"},
+        "capacity": {"$ref": "#/definitions/containerCapacity"}, "environment": {"$ref": "#/definitions/environment"},
+        "files": {"$ref": "#/definitions/files"}, "mounts": {"$ref": "#/definitions/mounts"}, "identity": {"$ref": "#/definitions/identity"},
+        "init": {"$ref": "#/definitions/containers"}, "run": {"enum": ["before", "after-ready", "manual"]},
+        "schedule": {"type": "string", "minLength": 9}, "order": {"type": "integer", "minimum": 0, "maximum": 9},
+        "timeout": {"$ref": "#/definitions/duration"}, "retries": {"type": "integer", "minimum": 0}, "suspend": {"type": "boolean"},
+        "fileGroup": {"type": "integer", "minimum": 0},
+        "cleanup": {"enum": ["on-success", "on-completion", "next-run"], "description": "Release-job result retention; defaults to on-success."},
+        "history": {"type": "object", "additionalProperties": false, "properties": {"successful": {"type": "integer", "minimum": 0}, "failed": {"type": "integer", "minimum": 0}}},
+        "startDeadline": {"type": "integer", "minimum": 1, "description": "Scheduled job's maximum late-start budget in seconds."}
+      },
+      "not": {"required": ["run", "schedule"]}
+    },
+    "containerCapacity": {"allOf": [{"$ref": "#/definitions/capacity"}, {"not": {"required": ["instances"]}}]}
+  }
+}

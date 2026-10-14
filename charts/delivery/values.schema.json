@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Mitis delivery",
+  "type": "object", "additionalProperties": false,
+  "required": ["project", "git", "environments", "releaseUnits"],
+  "properties": {
+    "project": {"$ref": "#/definitions/name"},
+    "argoNamespace": {"$ref": "#/definitions/name"},
+    "git": {"type": "object", "additionalProperties": false, "required": ["repository", "revision", "services", "environments"], "properties": {
+      "repository": {"type": "string", "pattern": "^https://"}, "revision": {"type": "string", "minLength": 1},
+      "services": {"$ref": "#/definitions/path"}, "environments": {"$ref": "#/definitions/path"}
+    }},
+    "charts": {"type": "object", "minProperties": 1, "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {
+      "type": "object", "additionalProperties": false, "required": ["repository", "name"], "properties": {
+        "repository": {"type": "string", "minLength": 1}, "name": {"$ref": "#/definitions/name"},
+        "serviceScopes": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^([a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*)?$"}, "description": "Native service subchart aliases; an empty scope means the first-party service chart itself."}
+      }
+    }},
+    "environments": {"type": "object", "minProperties": 1, "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {
+      "type": "object", "additionalProperties": false, "required": ["cluster", "namespace", "charts"], "properties": {
+        "cluster": {"type": "string", "minLength": 1}, "namespace": {"$ref": "#/definitions/name"},
+        "charts": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[a-zA-Z0-9.-]+)?$"}},
+        "upstream": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/name"}},
+        "promotion": {"enum": ["manual", "automatic"]},
+        "units": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/definitions/name"}},
+        "routing": {"enum": ["ingress", "gateway"]}
+      }
+    }},
+    "releaseUnits": {"type": "object", "minProperties": 1, "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {
+      "type": "object", "additionalProperties": false, "required": ["services"], "properties": {
+        "services": {"type": "object", "minProperties": 1, "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {
+          "type": "object", "additionalProperties": false, "required": ["chart", "images"], "properties": {
+            "chart": {"$ref": "#/definitions/name"}, "releaseName": {"$ref": "#/definitions/name"},
+            "order": {"type": "integer", "minimum": 0, "maximum": 100, "description": "Service slot within the coordinated Application. Later slots wait for earlier services' after-jobs."},
+            "images": {"type": "object", "minProperties": 1, "propertyNames": {"pattern": "^([a-zA-Z][a-zA-Z0-9_-]*\\.)*digest$"}, "additionalProperties": {"type": "string", "minLength": 1}, "description": "Values paths to immutable image digests and the image repositories they promote. Keys must already exist in environment overrides."},
+            "capacityTargets": {"type": "array", "items": {
+              "type": "object", "additionalProperties": false, "required": ["name", "kind"], "properties": {
+                "name": {"$ref": "#/definitions/name"}, "kind": {"enum": ["Deployment", "Rollout"]}
+              }
+            }, "description": "Exact Understudy-managed targets whose effective replicas Argo delegates. Must match service declarations; no unprotected targets."}
+          }
+        }}
+      }
+    }},
+    "discovery": {"type": "object", "additionalProperties": false, "properties": {
+      "interval": {"type": "string", "pattern": "^[1-9][0-9]*(s|m|h)$"}, "allowTags": {"type": "string", "minLength": 1}, "limit": {"type": "integer", "minimum": 1}
+    }}
+  },
+  "definitions": {
+    "name": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", "maxLength": 40},
+    "path": {"type": "string", "pattern": "^[a-zA-Z0-9_-][a-zA-Z0-9_/-]*$"}
+  }
+}

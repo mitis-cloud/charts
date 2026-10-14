@@ -1,0 +1,26 @@
+name: migrations
+workload: resources
+image:
+  repository: example.invalid/application
+  tag: test-fixture
+storage:
+  work: {temporary: true}
+jobs:
+  migrate:
+    run: after-ready
+    command: [/app/migrate]
+    timeout: 10m
+    retries: 2
+    environment:
+      DATABASE_URL: {remoteSecret: database-url}
+    mounts: {work: /work}
+    init:
+      prepare:
+        command: [/app/prepare]
+        mounts: {work: /work}
+  refresh:
+    schedule: '*/5 * * * *'
+    command: [/app/refresh]
+  reset:
+    run: manual
+    command: [/app/reset]

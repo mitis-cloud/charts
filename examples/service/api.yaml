@@ -1,0 +1,28 @@
+name: api
+image:
+  repository: traefik/whoami
+  tag: v1.12.0
+capacity:
+  instances: 2
+  cpu: 100m
+  memory: 64Mi
+  memoryLimit: 128Mi
+availability:
+  zones: 2
+ports:
+  http: 80
+http:
+  exposure: public
+  subdomain: api
+domain: test.example.com
+health:
+  startup: {http: /, port: http}
+  readiness: {http: /, port: http}
+  liveness: {http: /, port: http}
+environment:
+  LOG_LEVEL: info
+  PORTAL: {url: {subdomain: portal, path: /register}}
+  INSTANCE: {instance: name}
+disruption:
+  handover: true
+  maxWait: 10m

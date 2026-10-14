@@ -1,0 +1,16 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-json
+      - id: check-yaml
+        exclude: ^charts/[^/]+/templates/
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+  - repo: local
+    hooks:
+      - id: chart-contract
+        name: Chart contract tests
+        entry: make test
+        language: system
+        pass_filenames: false
