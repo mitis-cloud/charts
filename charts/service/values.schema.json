@@ -22,6 +22,7 @@
     "health": {"$ref": "#/definitions/health"},
     "environment": {"$ref": "#/definitions/environment"},
     "files": {"$ref": "#/definitions/files"},
+    "tokens": {"$ref": "#/definitions/tokens"},
     "mounts": {"$ref": "#/definitions/mounts"},
     "identity": {"$ref": "#/definitions/identity"},
     "security": {"enum": ["image-defaults", "restricted"], "description": "Restricted containers run non-root with a read-only root filesystem, no privilege escalation, all capabilities dropped, and the runtime-default seccomp profile."},
@@ -209,6 +210,14 @@
         "subdirectory": {"type": "string", "minLength": 1, "pattern": "^[^/].*"}
       }}
     ]}},
+    "tokens": {"type": "object", "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {
+      "type": "object", "additionalProperties": false, "required": ["audience", "path"],
+      "properties": {
+        "audience": {"type": "string", "minLength": 1},
+        "path": {"type": "string", "pattern": "^/[^/].*", "description": "Dedicated read-only directory; the rotating token is available at <path>/token."},
+        "lifetime": {"type": "integer", "minimum": 600, "maximum": 86400, "description": "Requested validity in seconds, default 3600; the API server may adjust it."}
+      }
+    }},
     "identity": {"type": "object", "additionalProperties": false, "properties": {"user": {"type": "integer", "minimum": 0}, "group": {"type": "integer", "minimum": 0}}},
     "containers": {"type": "object", "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {"$ref": "#/definitions/container"}},
     "container": {
@@ -217,7 +226,7 @@
         "image": {"$ref": "#/definitions/image"}, "command": {"$ref": "#/definitions/strings"}, "args": {"$ref": "#/definitions/strings"},
         "workingDirectory": {"$ref": "#/definitions/path"}, "capacity": {"$ref": "#/definitions/containerCapacity"}, "ports": {"$ref": "#/definitions/ports"},
         "environment": {"$ref": "#/definitions/environment"}, "health": {"$ref": "#/definitions/health"},
-        "files": {"$ref": "#/definitions/files"}, "mounts": {"$ref": "#/definitions/mounts"}, "identity": {"$ref": "#/definitions/identity"},
+        "files": {"$ref": "#/definitions/files"}, "tokens": {"$ref": "#/definitions/tokens"}, "mounts": {"$ref": "#/definitions/mounts"}, "identity": {"$ref": "#/definitions/identity"},
         "security": {"enum": ["image-defaults", "restricted"]}
       }
     },
@@ -227,7 +236,7 @@
         "name": {"$ref": "#/definitions/name"}, "image": {"$ref": "#/definitions/image"},
         "command": {"$ref": "#/definitions/strings"}, "args": {"$ref": "#/definitions/strings"}, "workingDirectory": {"$ref": "#/definitions/path"},
         "capacity": {"$ref": "#/definitions/containerCapacity"}, "environment": {"$ref": "#/definitions/environment"},
-        "files": {"$ref": "#/definitions/files"}, "mounts": {"$ref": "#/definitions/mounts"}, "identity": {"$ref": "#/definitions/identity"},
+        "files": {"$ref": "#/definitions/files"}, "tokens": {"$ref": "#/definitions/tokens"}, "mounts": {"$ref": "#/definitions/mounts"}, "identity": {"$ref": "#/definitions/identity"},
         "init": {"$ref": "#/definitions/containers"}, "run": {"enum": ["before", "after-ready", "manual"]},
         "schedule": {"type": "string", "minLength": 9}, "order": {"type": "integer", "minimum": 0, "maximum": 9},
         "timeout": {"oneOf": [{"$ref": "#/definitions/duration"}, {"const": "none"}], "description": "Execution deadline; none explicitly preserves jobs without a controller deadline."}, "retries": {"type": "integer", "minimum": 0}, "suspend": {"type": "boolean"},

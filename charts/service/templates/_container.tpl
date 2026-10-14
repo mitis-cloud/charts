@@ -82,7 +82,7 @@ env:
   timeoutSeconds: {{ $probe.timeout | default 2 }}
   failureThreshold: {{ $probe.failures | default (ternary 30 3 (eq $kind "startup")) }}
 {{- end }}
-{{- if or $c.mounts $c.files }}
+{{- if or $c.mounts $c.files $c.tokens }}
 volumeMounts:
   {{- range $name, $mount := $c.mounts }}
   - name: {{ $name }}
@@ -100,6 +100,11 @@ volumeMounts:
   - name: {{ $.id }}-file-{{ $name }}
     mountPath: {{ $file.path | quote }}
     subPath: {{ $file.key | default $name | quote }}
+    readOnly: true
+  {{- end }}
+  {{- range $name, $token := $c.tokens }}
+  - name: {{ $.id }}-token-{{ $name }}
+    mountPath: {{ $token.path | quote }}
     readOnly: true
   {{- end }}
 {{- end }}

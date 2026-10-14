@@ -12,6 +12,10 @@ func expand(value any, params map[string]any) (any, error) {
 	switch value := value.(type) {
 	case string:
 		t, err := template.New("resource").Funcs(template.FuncMap{
+			"toJson": func(value any) (string, error) {
+				encoded, err := json.Marshal(value)
+				return string(encoded), err
+			},
 			"fromJson": func(text string) (any, error) {
 				var value any
 				err := json.Unmarshal([]byte(text), &value)

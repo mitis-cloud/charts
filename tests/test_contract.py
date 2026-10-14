@@ -111,6 +111,71 @@ class ServiceContract(unittest.TestCase):
             with self.subTest(invalid=invalid):
                 render(self.chart, self.base, invalid, success=False)
 
+    def test_projected_identity_tokens_rotate_and_are_explicit(self):
+        values = {
+            "account": "identity-client",
+            "apiToken": False,
+            "tokens": {
+                "federation": {
+                    "audience": "sts.amazonaws.com",
+                    "path": "/var/run/identity",
+                    "lifetime": 86400,
+                }
+            },
+            "sidecars": {"observer": {"command": ["observe"]}},
+            "jobs": {
+                "verify": {
+                    "run": "after-ready",
+                    "account": "verifier",
+                    "tokens": {
+                        "check": {"audience": "verification", "path": "/var/run/check"}
+                    },
+                }
+            },
+        }
+        docs = render(self.chart, self.base, values)
+        pod = resource(docs, "Deployment")["spec"]["template"]["spec"]
+        self.assertEqual(pod["serviceAccountName"], "identity-client")
+        self.assertFalse(pod["automountServiceAccountToken"])
+        projection = pod["volumes"][0]["projected"]["sources"][0]["serviceAccountToken"]
+        self.assertEqual(
+            projection,
+            {
+                "audience": "sts.amazonaws.com",
+                "expirationSeconds": 86400,
+                "path": "token",
+            },
+        )
+        mount = pod["containers"][0]["volumeMounts"][0]
+        self.assertTrue(mount["readOnly"])
+        self.assertNotIn("subPath", mount)
+        self.assertNotIn("volumeMounts", pod["containers"][1])
+        job = resource(docs, "Job")["spec"]["template"]["spec"]
+        self.assertEqual(job["serviceAccountName"], "verifier")
+        self.assertEqual(
+            job["volumes"][0]["projected"]["sources"][0]["serviceAccountToken"][
+                "expirationSeconds"
+            ],
+            3600,
+        )
+        for override in [
+            {"tokens": {"federation": {"path": "/"}}},
+            {"tokens": {"federation": {"path": "/var/../identity"}}},
+            {"tokens": {"federation": {"lifetime": 599}}},
+            {"tokens": {"federation": {"audience": ""}}},
+            {
+                "files": {
+                    "overlap": {
+                        "path": "/var/run/identity/config",
+                        "content": "literal",
+                    }
+                }
+            },
+            {"workload": "resources"},
+        ]:
+            with self.subTest(override=override):
+                render(self.chart, self.base, values, override, success=False)
+
     def test_fixed_response_is_bounded_and_ingress_only(self):
         values = ROOT / "examples/service/response.yaml"
         docs = render(self.chart, values)

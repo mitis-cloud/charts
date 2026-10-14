@@ -70,7 +70,7 @@ containers:
   - {{ include "mitis.service.container" (dict "root" $root "container" $container "name" $id "id" (printf "sidecar-%s" $id)) | nindent 4 | trim }}
   {{- end }}
 {{- $files := false -}}
-{{- range $id, $container := $containers -}}{{ if $container.files }}{{ $files = true }}{{ end }}{{- end }}
+{{- range $id, $container := $containers -}}{{ if or $container.files $container.tokens }}{{ $files = true }}{{ end }}{{- end }}
 {{- if or $volumes $files }}
 volumes:
   {{- range $name, $volume := $volumes }}
@@ -92,6 +92,16 @@ volumes:
     {{- end }}
   {{- end }}
   {{- range $id, $container := $containers }}
+  {{- range $name, $token := $container.tokens }}
+  - name: {{ $id }}-token-{{ $name }}
+    projected:
+      defaultMode: 420
+      sources:
+        - serviceAccountToken:
+            audience: {{ $token.audience | quote }}
+            expirationSeconds: {{ $token.lifetime | default 3600 }}
+            path: token
+  {{- end }}
   {{- range $name, $file := $container.files }}
   - name: {{ $id }}-file-{{ $name }}
     {{- if $file.secret }}
