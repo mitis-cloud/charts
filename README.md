@@ -7,7 +7,7 @@ Small, opinionated Helm charts for describing **services** and **delivery** with
 | [service](charts/service/README.md) | A continuous service, its inputs, storage, helpers, and jobs; or a resource-only service | `ghcr.io/mitis-cloud/charts/service` |
 | [delivery](charts/delivery/README.md) | Argo CD applications and independent Kargo promotion units across explicit environments | `ghcr.io/mitis-cloud/charts/delivery` |
 
-**Released:** `service:0.1.2` and `delivery:0.1.0` are public OCI packages. This branch prepares `service:0.2.0` with consumption-first inputs and structured files. Releases are published from tested Git tags through CI and can be pulled anonymously. Render validation does not certify controller/runtime behavior or a project's migration.
+**Released:** `service:0.2.0` and `delivery:0.1.0` are public OCI packages. Service 0.2 introduces consumption-first inputs and structured files. Releases are published from tested Git tags through CI and can be pulled anonymously. Render validation does not certify controller/runtime behavior or a project's migration.
 
 ## Start with one service
 
@@ -32,7 +32,7 @@ helm template api charts/service -f examples/service/api.yaml
 Or pull the released chart:
 
 ```sh
-helm pull oci://ghcr.io/mitis-cloud/charts/service --version 0.1.2
+helm pull oci://ghcr.io/mitis-cloud/charts/service --version 0.2.0
 helm pull oci://ghcr.io/mitis-cloud/charts/delivery --version 0.1.0
 ```
 
