@@ -103,18 +103,19 @@ volumes:
             path: token
   {{- end }}
   {{- range $name, $file := $container.files }}
+  {{- $source := include "mitis.service.file" (dict "root" $root "file" $file "id" $id "key" $name) | fromJson }}
   - name: {{ $id }}-file-{{ $name }}
-    {{- if $file.secret }}
+    {{- if eq $source.kind "Secret" }}
     secret:
-      secretName: {{ $file.secret.name }}
+      secretName: {{ $source.name }}
     {{- else }}
     configMap:
-      name: {{ $file.name | default (printf "%s-%s-file-%s" (include "mitis.service.name" $root) $id $name) }}
+      name: {{ $source.name }}
     {{- end }}
       defaultMode: {{ if hasKey $file "mode" }}{{ $file.mode }}{{ else }}420{{ end }}
       items:
-        - key: {{ if $file.secret }}{{ $file.secret.key | quote }}{{ else }}{{ $file.key | default $name | quote }}{{ end }}
-          path: {{ $file.key | default $name | quote }}
+        - key: {{ $source.key | quote }}
+          path: {{ $source.key | quote }}
   {{- end }}
   {{- end }}
 {{- end }}

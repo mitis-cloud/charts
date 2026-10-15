@@ -15,10 +15,10 @@ storage: {}
 init: {}
 sidecars: {}
 jobs: {}
-secrets: {}
 domain: ''
 secretPrefix: ''
 secretStore: aws-ssm
+secretRefresh: 1h
 placement: any
 updates:
   strategy: rolling

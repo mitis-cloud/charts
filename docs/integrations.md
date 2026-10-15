@@ -13,7 +13,7 @@ These charts render application resources. Infrastructure installs and configure
 | Argo Rollouts | 1.10.1 | Rollout/AnalysisTemplate schemas and progression assertions |
 | Gateway API | 1.6.3 | HTTPRoute v1 schema |
 | Gateway traffic plugin | 0.17.0 | Maintained HTTPRoute integration configuration; runtime traffic needs validation |
-| External Secrets | 2.2.0 | Existing-consumer API baseline; ExternalSecret v1 schema |
+| External Secrets | 2.2.0 | Existing-consumer API baseline; ExternalSecret v1 schema and actual v2 engine evaluation |
 | Understudy | 0.4.4 | Target/baseline schema and published upstream ordinary-Argo integration contract |
 
 The new tool/controller references were checked against current stable releases on 2026-10-14. External Secrets deliberately uses the existing consumer baseline instead of silently upgrading the cluster to the latest 2.12.0. The service chart has no dependency on these controllers' Helm charts and does not install or upgrade them.
@@ -59,3 +59,19 @@ Existing installations need the **0.4.4 CRD upgrade explicitly**; Helm does not 
 `availability.zones` generates strict native topology spreading with `maxSkew: 1`, `minDomains`, and `DoNotSchedule`. Revision labels distinguish rolling/canary generations. Canary keeps a full candidate replica pool while the stable pool serves, so additional capacity is required.
 
 Omission adds no zone requirement, including for one instance. If an eligible zone is lost, the policy does not automatically relax into same-zone placement. Scheduling constraints do not continuously rebalance existing pods or prove application-level availability. Node provisioning and storage constraints must permit the requested spread.
+
+## Native chart composition
+
+A product-owned wrapper may include native charts and `service` as ordinary Helm dependencies. Set the helper dependency's `workload: resources` when it only supplies dedicated jobs or inputs. Declare each helper's context, environment, files, mounts and resources explicitly. Helm dependency aliases do not copy parent values to children or share sibling values. A wrapper owns its composition and native adapters; Mitis remains product-neutral.
+
+For a native workload that already consumes an existing Secret, the named helpers expose the same input compiler without adding a first-party workload:
+
+```gotemplate
+{{- $containers := dict "main" (dict "inputSecret" "server-inputs" "environment" .Values.environment) -}}
+{{- $inputs := include "mitis.service.processInputs" (dict "root" . "containers" $containers "generateAll" true) | fromJson -}}
+{{- include "mitis.service.inputResources" (dict "root" . "inputs" $inputs) -}}
+```
+
+The root supplies `secretPrefix`, `secretStore`, `secretRefresh`, `facts` and any `domain` needed by typed references. `render` is optional and defaults to Helm. `generateAll` includes literal entries alongside remote entries in the native Secret target; each generated Secret must contain at least one remote-backed input. Per-entry `name` and `key` preserve native target identities. The wrapper must validate its public fields, configure native consumers and avoid duplicate input ownership across dependencies. These helpers render ConfigMaps and ExternalSecrets only; they neither mutate subchart values nor fetch provider data.
+
+Ordinary first-party services use direct consumption fields and do not need these template helpers. The compiler intentionally rejects arbitrary author-supplied transformations; structured files and the restricted `format` vocabulary cover supported data composition.

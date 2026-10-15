@@ -25,5 +25,5 @@ files:
     path: /etc/example/settings.json
     content: '{"literal": "{{ do_not_evaluate_this }}"}'
 environment:
-  TOKEN: {remoteSecret: example-token}
+  TOKEN: {ssm: example-token}
 secretPrefix: test-

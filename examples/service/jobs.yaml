@@ -12,7 +12,7 @@ jobs:
     timeout: 10m
     retries: 2
     environment:
-      DATABASE_URL: {remoteSecret: database-url}
+      DATABASE_URL: {ssm: database-url}
     mounts: {work: /work}
     init:
       prepare:

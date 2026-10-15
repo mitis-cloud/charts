@@ -1,0 +1,22 @@
+workload: resources
+facts:
+  databaseHost: database.example.internal
+  count: 0
+files:
+  connection:
+    path: /etc/service/connection.yaml
+    yaml:
+      database:
+        host: {fact: databaseHost}
+        password: {ssm: database-password}
+      count: {fact: count}
+      enabled: false
+jobs:
+  configure:
+    run: after-ready
+    image: {repository: example.invalid/configure, tag: fixture}
+    command: [configure, /etc/service/connection.yaml]
+    files:
+      connection:
+        from: connection
+        path: /etc/service/connection.yaml

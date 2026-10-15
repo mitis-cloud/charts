@@ -1,5 +1,8 @@
 {{- define "mitis.service.validate" -}}
 {{- $v := .Values -}}
+{{- range $key, $value := $v.jobs -}}
+{{- if eq (kindOf $value) "invalid" -}}{{ $_ := unset $v.jobs $key }}{{- end -}}
+{{- end -}}
 {{- range $key, $value := $v.storage -}}
 {{- if eq (kindOf $value) "invalid" -}}{{ $_ := unset $v.storage $key }}{{- end -}}
 {{- end -}}
@@ -15,16 +18,13 @@
 {{- range $key, $value := $c.mounts -}}
 {{- if eq (kindOf $value) "invalid" -}}{{ $_ := unset $c.mounts $key }}{{- end -}}
 {{- end -}}
+{{- range $key, $value := $c.files -}}
+{{- if eq (kindOf $value) "invalid" -}}{{ $_ := unset $c.files $key }}{{- end -}}
 {{- end -}}
-{{- range $secret := $v.secrets -}}
-{{- range $key, $value := $secret.values -}}
-{{- if eq (kindOf $value) "invalid" -}}{{ $_ := unset $secret.values $key }}{{- end -}}
-{{- end -}}
-{{- if not $secret.values -}}{{ fail "managed secrets require at least one remote value after omissions" }}{{- end -}}
 {{- end -}}
 {{- $name := include "mitis.service.name" . -}}
 {{- $identities := dict -}}
-{{- if and (eq $v.workload "resources") (or $v.init $v.sidecars $v.ports $v.health $v.environment $v.files $v.tokens $v.mounts (and $v.http (not $v.response)) $v.availability $v.command $v.args $v.identity $v.fileGroup $v.shutdown $v.workingDirectory $v.account $v.security $v.discovery (hasKey $v "apiToken")) -}}
+{{- if and (eq $v.workload "resources") (or $v.init $v.sidecars $v.ports $v.health $v.environment $v.tokens $v.mounts (and $v.http (not $v.response)) $v.availability $v.command $v.args $v.identity $v.fileGroup $v.shutdown $v.workingDirectory $v.account $v.security $v.discovery (hasKey $v "apiToken")) -}}
 {{- fail "resource-only services declare container inputs on their jobs, not at the root" -}}{{- end -}}
 {{- if or (gt (len $name) 40) (not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $name)) -}}
 {{- fail "service name/release name must be a DNS label of at most 40 characters" -}}{{- end -}}
@@ -52,14 +52,6 @@
 {{- range $id, $c := $containers -}}
 {{- if and $c.account $v.permissions -}}{{ fail "account consumes an existing service account and cannot be combined with chart-owned permissions" }}{{- end -}}
 {{- if and (eq ($c.security | default "image-defaults") "restricted") (hasKey ($c.identity | default dict) "user") (eq (int $c.identity.user) 0) -}}{{ fail "restricted security cannot run as user 0" }}{{- end -}}
-{{- $remote := false -}}
-{{- range $_, $value := $c.environment -}}
-{{- if and (kindIs "map" $value) (hasKey $value "remoteSecret") -}}{{ $remote = true }}{{- end -}}
-{{- end -}}
-{{- if $remote -}}
-{{- $secretName := printf "%s-secrets" (include "mitis.service.containerName" (dict "root" $ "id" $id)) -}}
-{{- include "mitis.service.reserve" (dict "identities" $identities "kind" "Secret" "name" $secretName) -}}
-{{- end -}}
 {{- if gt (len $id) 63 -}}{{ fail (printf "container/helper identity %s exceeds 63 characters" $id) }}{{- end -}}
 {{- $image := $v.image -}}{{ if hasKey $c "image" }}{{ $image = $c.image }}{{ end -}}
 {{- $_ := include "mitis.service.image" $image -}}
@@ -72,9 +64,6 @@
 {{- $_ := set $paths $path true -}}
 {{- end -}}
 {{- range $file, $f := $c.files -}}
-{{- if hasKey $f "content" -}}
-{{- include "mitis.service.reserve" (dict "identities" $identities "kind" "ConfigMap" "name" ($f.name | default (printf "%s-%s-file-%s" $name $id $file))) -}}
-{{- end -}}
 {{- if gt (len (printf "%s-file-%s" $id $file)) 63 -}}{{ fail "generated file volume names must fit in 63 characters" }}{{- end -}}
 {{- if hasKey $paths $f.path -}}{{ fail (printf "%s has duplicate mount/file path %s" $id $f.path) }}{{- end -}}
 {{- $_ := set $paths $f.path true -}}
@@ -93,22 +82,19 @@
 {{- fail (printf "%s.health.%s refers to unknown named port %s" $id $probe $port) -}}{{- end -}}
 {{- end -}}
 {{- end -}}
-{{- range $id, $secret := $v.secrets -}}
-{{- include "mitis.service.reserve" (dict "identities" $identities "kind" "Secret" "name" ($secret.name | default $id)) -}}
-{{- if and $secret.templateContext (not $secret.template) -}}{{ fail "secrets.templateContext requires template" }}{{- end -}}
+{{- $inputs := include "mitis.service.inputs" . | fromJson -}}
+{{- range $id, $_ := $inputs.secrets -}}
+{{- include "mitis.service.reserve" (dict "identities" $identities "kind" "Secret" "name" $id) -}}
+{{- end -}}
+{{- range $id, $_ := $inputs.configs -}}
+{{- include "mitis.service.reserve" (dict "identities" $identities "kind" "ConfigMap" "name" $id) -}}
 {{- end -}}
 {{- range $id, $volume := $v.storage -}}
 {{- if eq ($volume.access | default "") "shared" -}}
 {{- include "mitis.service.reserve" (dict "identities" $identities "kind" "PersistentVolumeClaim" "name" ($volume.name | default (printf "%s-%s" $name $id))) -}}
 {{- end -}}
 {{- end -}}
-{{- $inputCount := add (len $v.secrets) (len $v.storage) -}}
-{{- range $id, $c := $containers -}}
-{{- $inputCount = add $inputCount (len ($c.files | default dict)) -}}
-{{- range $_, $value := $c.environment -}}
-{{- if and (kindIs "map" $value) (hasKey $value "remoteSecret") -}}{{ $inputCount = add $inputCount 1 }}{{- end -}}
-{{- end -}}
-{{- end -}}
+{{- $inputCount := add (len $inputs.secrets) (len $inputs.configs) (len $v.storage) -}}
 {{- range $id, $job := $v.jobs -}}
 {{- if and $job.resultLifetime (or $job.schedule (regexMatch "^[1-9][0-9]*(s|m|h)$" ($job.cleanup | default ""))) -}}{{ fail "resultLifetime requires a release job with an immediate or next-run cleanup policy" }}{{- end -}}
 {{- include "mitis.service.reserve" (dict "identities" $identities "kind" "Task" "name" ($job.name | default (printf "%s-%s" $name $id))) -}}

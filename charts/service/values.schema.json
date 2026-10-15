@@ -36,6 +36,8 @@
     "sharedStorage": {"$ref": "#/definitions/name", "description": "Existing shared-filesystem storage class, supplied once by environment defaults. Required when provisioning shared volumes."},
     "secretPrefix": {"type": "string", "description": "Prefix prepended to remote-secret names. Secret values never belong here."},
     "secretStore": {"$ref": "#/definitions/name", "description": "Existing cluster secret-store identity supplied by environment composition."},
+    "secretRefresh": {"$ref": "#/definitions/duration", "description": "Refresh interval for generated input Secrets; defaults to 1h."},
+    "inputSecret": {"$ref": "#/definitions/name", "description": "Stable target for this process's generated environment inputs; defaults to its identity plus -secrets."},
     "facts": {"type": "object", "additionalProperties": {"type": ["string", "number", "boolean"]}, "description": "Authoritative application environment facts referenced by name; not a manifest or template interface."},
     "placement": {"$ref": "#/definitions/name", "description": "Existing environment-owned workload pool, such as spot or stable; any adds no placement constraint."},
     "updates": {
@@ -76,23 +78,7 @@
     },
     "init": {"$ref": "#/definitions/containers"},
     "sidecars": {"$ref": "#/definitions/containers"},
-    "jobs": {"type": "object", "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {"$ref": "#/definitions/job"}},
-    "secrets": {
-      "type": "object", "propertyNames": {"$ref": "#/definitions/name"},
-      "additionalProperties": {
-        "type": "object", "additionalProperties": false, "required": ["values"],
-        "properties": {
-          "name": {"$ref": "#/definitions/name"},
-          "refresh": {"$ref": "#/definitions/duration"},
-          "templateContext": {"type": "object", "propertyNames": {"pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}, "additionalProperties": {"oneOf": [
-            {"type": ["string", "number", "boolean"]},
-            {"type": "object", "additionalProperties": false, "required": ["fact"], "properties": {"fact": {"type": "string", "minLength": 1}}}
-          ]}, "description": "Non-secret literal/environment facts exposed as $context inside ESO templates. No Helm evaluation."},
-          "values": {"type": "object", "minProperties": 1, "additionalProperties": {"oneOf": [{"$ref": "#/definitions/remote"}, {"type": "null"}]}},
-          "template": {"type": "object", "additionalProperties": {"type": "string"}, "description": "ESO v2 templates, evaluated only by External Secrets. Strings are never Helm templates."}
-        }
-      }
-    },
+    "jobs": {"type": "object", "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {"oneOf": [{"type": "null"}, {"$ref": "#/definitions/job"}]}},
     "permissions": {
       "type": "array", "items": {
         "type": "object", "additionalProperties": false, "required": ["group", "resources", "actions"],
@@ -183,10 +169,9 @@
       "type": "object", "propertyNames": {"pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
       "additionalProperties": {"oneOf": [
         {"type": ["string", "number", "boolean", "null"]},
-        {"type": "object", "additionalProperties": false, "required": ["remoteSecret"], "properties": {"remoteSecret": {"$ref": "#/definitions/remote"}}},
+        {"$ref": "#/definitions/environmentInput"},
         {"type": "object", "additionalProperties": false, "required": ["secret"], "properties": {"secret": {"$ref": "#/definitions/secret"}}},
         {"type": "object", "additionalProperties": false, "required": ["instance"], "properties": {"instance": {"enum": ["name", "namespace", "ip"]}}},
-        {"type": "object", "additionalProperties": false, "required": ["fact"], "properties": {"fact": {"type": "string", "minLength": 1}}},
         {"type": "object", "additionalProperties": false, "required": ["url"], "properties": {"url": {
           "type": "object", "additionalProperties": false, "properties": {"hostname": {"type": "string"}, "subdomain": {"type": "string"}, "path": {"$ref": "#/definitions/path"}, "scheme": {"enum": ["http", "https"]}}
         }}},
@@ -195,15 +180,40 @@
         }}}
       ]}
     },
-    "files": {"type": "object", "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {
+    "environmentInput": {
+      "type": "object", "additionalProperties": false,
+      "oneOf": [{"required": ["ssm"]}, {"required": ["format"]}, {"required": ["fact"]}, {"required": ["value"]}],
+      "properties": {
+        "value": {"type": ["string", "number", "boolean"]},
+        "name": {"$ref": "#/definitions/name", "description": "Existing target Secret identity for this remote-backed input; defaults to the process inputSecret."},
+        "ssm": {"$ref": "#/definitions/remote"}, "format": {"type": "string"},
+        "fact": {"type": "string", "minLength": 1},
+        "key": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$", "description": "Existing target Secret key when different from the variable name; valid only for a remote-backed input."}
+      }
+    },
+    "ssm": {"type": "object", "additionalProperties": false, "required": ["ssm"], "properties": {"ssm": {"$ref": "#/definitions/remote"}}},
+    "format": {"type": "object", "additionalProperties": false, "required": ["format"], "properties": {"format": {"type": "string"}}, "description": "Literal text with explicit {ssm:key} or {fact:name} substitutions; |urlquery is the only supported encoding operation."},
+    "document": {"oneOf": [
+      {"type": ["string", "number", "boolean", "null"]},
+      {"$ref": "#/definitions/ssm"},
+      {"$ref": "#/definitions/format"},
+      {"type": "object", "additionalProperties": false, "required": ["fact"], "properties": {"fact": {"type": "string", "minLength": 1}}},
+      {"type": "array", "items": {"$ref": "#/definitions/document"}},
+      {"type": "object", "additionalProperties": {"$ref": "#/definitions/document"}, "not": {"anyOf": [{"required": ["ssm"]}, {"required": ["format"]}, {"required": ["fact"]}]}}
+    ]},
+    "files": {"type": "object", "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {"oneOf": [{"type": "null"}, {
       "type": "object", "additionalProperties": false, "required": ["path"],
-      "oneOf": [{"required": ["content"], "not": {"required": ["secret"]}}, {"required": ["secret"], "not": {"required": ["content"]}}],
+      "oneOf": [{"required": ["content"]}, {"required": ["secret"]}, {"required": ["ssm"]}, {"required": ["format"]}, {"required": ["yaml"]}, {"required": ["json"]}, {"required": ["from"]}],
       "properties": {
         "path": {"$ref": "#/definitions/path"}, "content": {"type": "string"}, "secret": {"$ref": "#/definitions/secret"},
+        "ssm": {"$ref": "#/definitions/remote"}, "format": {"type": "string"},
+        "yaml": {"$ref": "#/definitions/document"}, "json": {"$ref": "#/definitions/document"},
+        "from": {"$ref": "#/definitions/name", "description": "Consume a uniquely named file declared by this service or one of its helpers."},
         "name": {"$ref": "#/definitions/name"}, "key": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$"},
         "mode": {"type": "integer", "minimum": 0, "maximum": 511}
-      }
-    }},
+      },
+      "allOf": [{"if": {"required": ["from"]}, "then": {"not": {"anyOf": [{"required": ["name"]}, {"required": ["key"]}]}}}]
+    }]}},
     "mounts": {"type": "object", "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {"oneOf": [
       {"type": "null"},
       {"$ref": "#/definitions/path"},
@@ -228,6 +238,7 @@
         "image": {"$ref": "#/definitions/image"}, "command": {"$ref": "#/definitions/strings"}, "args": {"$ref": "#/definitions/strings"},
         "workingDirectory": {"$ref": "#/definitions/path"}, "capacity": {"$ref": "#/definitions/containerCapacity"}, "ports": {"$ref": "#/definitions/ports"},
         "environment": {"$ref": "#/definitions/environment"}, "health": {"$ref": "#/definitions/health"},
+        "inputSecret": {"$ref": "#/definitions/name"},
         "files": {"$ref": "#/definitions/files"}, "tokens": {"$ref": "#/definitions/tokens"}, "mounts": {"$ref": "#/definitions/mounts"}, "identity": {"$ref": "#/definitions/identity"},
         "security": {"enum": ["image-defaults", "restricted"]}
       }
@@ -238,6 +249,7 @@
         "name": {"$ref": "#/definitions/name"}, "image": {"$ref": "#/definitions/image"},
         "command": {"$ref": "#/definitions/strings"}, "args": {"$ref": "#/definitions/strings"}, "workingDirectory": {"$ref": "#/definitions/path"},
         "capacity": {"$ref": "#/definitions/containerCapacity"}, "environment": {"$ref": "#/definitions/environment"},
+        "inputSecret": {"$ref": "#/definitions/name"},
         "files": {"$ref": "#/definitions/files"}, "tokens": {"$ref": "#/definitions/tokens"}, "mounts": {"$ref": "#/definitions/mounts"}, "identity": {"$ref": "#/definitions/identity"},
         "init": {"$ref": "#/definitions/containers"}, "run": {"enum": ["before", "after-ready", "manual"]},
         "schedule": {"type": "string", "minLength": 9}, "order": {"type": "integer", "minimum": 0, "maximum": 9},

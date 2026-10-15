@@ -75,6 +75,27 @@ def resource(docs, kind, name=None):
     )
 
 
+def expand_inputs(data, parameters):
+    result = subprocess.run(
+        ["go", "run", "."],
+        cwd=ROOT / "tests/eso",
+        input=json.dumps({"data": data, "parameters": parameters}),
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode:
+        raise AssertionError(result.stderr)
+    return json.loads(result.stdout)
+
+
+def expand_secret(secret, remote):
+    parameters = {
+        item["secretKey"]: remote[item["remoteRef"]["key"]]
+        for item in secret["spec"]["data"]
+    }
+    return expand_inputs(secret["spec"]["target"]["template"]["data"], parameters)
+
+
 class ServiceContract(unittest.TestCase):
     chart = ROOT / "charts/service"
     base = {"image": {"repository": "example.invalid/service", "tag": "fixture"}}
@@ -154,50 +175,53 @@ class ServiceContract(unittest.TestCase):
         service = {
             "storage": {"assets": {"existing": "shared-assets"}},
             "mounts": {"assets": "/srv"},
-            "secrets": {
-                "credentials": {
-                    "values": {"required": "required", "optional": "optional"}
-                }
-            },
             "environment": {
-                "OPTIONAL": {"secret": {"name": "credentials", "key": "optional"}}
+                "REQUIRED": {"ssm": "required"},
+                "OPTIONAL": {"ssm": "optional"},
             },
         }
         override = {
             "storage": {"assets": None},
             "mounts": {"assets": None},
-            "secrets": {"credentials": {"values": {"optional": None}}},
             "environment": {"OPTIONAL": None},
         }
         docs = render(self.chart, self.base, service, override)
         pod = resource(docs, "Deployment")["spec"]["template"]["spec"]
         self.assertNotIn("volumes", pod)
         self.assertNotIn("volumeMounts", pod["containers"][0])
-        self.assertNotIn("env", pod["containers"][0])
+        self.assertEqual([e["name"] for e in pod["containers"][0]["env"]], ["REQUIRED"])
         self.assertEqual(
-            resource(docs, "ExternalSecret")["spec"]["data"],
             [
-                {"secretKey": "required", "remoteRef": {"key": "required"}},
+                d["remoteRef"]["key"]
+                for d in resource(docs, "ExternalSecret")["spec"]["data"]
             ],
+            ["required"],
         )
         render(
             self.chart, self.base, service, {"storage": {"assets": None}}, success=False
         )
-        render(
+        empty = render(
             self.chart,
             self.base,
             service,
             override,
-            {"secrets": {"credentials": {"values": {"required": None}}}},
-            success=False,
+            {"environment": {"REQUIRED": None}},
+        )
+        self.assertFalse(any(d["kind"] == "ExternalSecret" for d in empty))
+        self.assertNotIn(
+            "env",
+            resource(empty, "Deployment")["spec"]["template"]["spec"]["containers"][0],
         )
 
     def test_explicit_manual_task_can_share_its_resource_only_release(self):
         service = {
             "workload": "resources",
-            "secrets": {"inputs": {"values": {"key": "key"}}},
             "jobs": {
-                "reset": {"run": "manual", "command": ["reset"]},
+                "reset": {
+                    "run": "manual",
+                    "command": ["reset"],
+                    "environment": {"TOKEN": {"ssm": "token"}},
+                },
                 "other": {"run": "manual", "command": ["other"]},
             },
         }
@@ -308,46 +332,46 @@ class ServiceContract(unittest.TestCase):
             with self.subTest(invalid=invalid):
                 render(self.chart, values, invalid, success=False)
 
-    def test_secret_context_is_typed_data_not_template_code(self):
+    def test_structured_inputs_preserve_types_and_treat_strings_as_data(self):
         literal = '"{{ fail "not code" }}"\n\\'
         values = {
             "workload": "resources",
             "facts": {"enabled": False, "count": 0},
-            "secrets": {
+            "files": {
                 "config": {
-                    "values": {"password": "password"},
-                    "templateContext": {
+                    "path": "/config.json",
+                    "json": {
                         "enabled": {"fact": "enabled"},
                         "count": {"fact": "count"},
                         "literal": literal,
-                    },
-                    "template": {
-                        "file": "{{ if $context.enabled }}on{{ else }}off{{ end }}|{{ $context.count }}|{{ $context.literal }}|{{ .password }}"
+                        "password": {"ssm": "password"},
+                        "items": [None, True, 7, "7"],
                     },
                 }
             },
         }
         secret = resource(render(self.chart, values), "ExternalSecret")
-        output = subprocess.run(
-            ["go", "run", str(ROOT / "tests/expand_templates.go")],
-            input=json.dumps(
-                {
-                    "template": secret["spec"]["target"]["template"]["data"],
-                    "elements": [{"password": "fixture"}],
-                }
-            ),
-            text=True,
-            capture_output=True,
-            check=True,
-        )
+        password = '"newline\n{{ .unsafe }}\\'
+        output = expand_secret(secret, {"password": password})
         self.assertEqual(
-            json.loads(output.stdout), [{"file": f"off|0|{literal}|fixture"}]
+            json.loads(output["config"]),
+            {
+                "enabled": False,
+                "count": 0,
+                "literal": literal,
+                "password": password,
+                "items": [None, True, 7, "7"],
+            },
         )
         render(self.chart, values, {"facts": {"enabled": None}}, success=False)
         render(
             self.chart,
             values,
-            {"secrets": {"config": {"template": None}}},
+            {
+                "files": {
+                    "config": {"json": {"password": {"ssm": "password", "extra": True}}}
+                }
+            },
             success=False,
         )
 
@@ -434,7 +458,7 @@ class ServiceContract(unittest.TestCase):
         values = copy.deepcopy(self.base)
         values.update(
             {
-                "environment": {"PRIVATE": {"remoteSecret": "private"}},
+                "environment": {"PRIVATE": {"ssm": "private"}},
                 "secretPrefix": "test-",
                 "storage": {"work": {"temporary": True}},
                 "mounts": {"work": "/work"},

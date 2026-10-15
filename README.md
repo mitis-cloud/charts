@@ -7,7 +7,7 @@ Small, opinionated Helm charts for describing **services** and **delivery** with
 | [service](charts/service/README.md) | A continuous service, its inputs, storage, helpers, and jobs; or a resource-only service | `ghcr.io/mitis-cloud/charts/service` |
 | [delivery](charts/delivery/README.md) | Argo CD applications and independent Kargo promotion units across explicit environments | `ghcr.io/mitis-cloud/charts/delivery` |
 
-**Released:** `service:0.1.0` and `delivery:0.1.0` are public OCI packages. Both are published from tested Git tags through CI and can be pulled anonymously. Render validation does not certify controller/runtime behavior or a project's migration.
+**Released:** `service:0.1.2` and `delivery:0.1.0` are public OCI packages. This branch prepares `service:0.2.0` with consumption-first inputs and structured files. Releases are published from tested Git tags through CI and can be pulled anonymously. Render validation does not certify controller/runtime behavior or a project's migration.
 
 ## Start with one service
 
@@ -32,7 +32,7 @@ helm template api charts/service -f examples/service/api.yaml
 Or pull the released chart:
 
 ```sh
-helm pull oci://ghcr.io/mitis-cloud/charts/service --version 0.1.0
+helm pull oci://ghcr.io/mitis-cloud/charts/service --version 0.1.2
 helm pull oci://ghcr.io/mitis-cloud/charts/delivery --version 0.1.0
 ```
 
@@ -49,9 +49,9 @@ Values are direct and typed. Unknown fields fail validation. Strings are literal
 - [Delivery reference](charts/delivery/README.md)
 - [Tracked roadmap](ROADMAP.md)
 
-Use chart defaults → canonical service YAML → environment defaults → service/environment overrides. All first-party layers use the same vocabulary. Maps merge; lists replace. Set an environment-variable, storage, mount, or managed-secret value entry to `null` to omit it. Files supplied through Argo must be plain YAML; Argo does not evaluate Helmfile `.gotmpl` files.
+Use chart defaults → canonical service YAML → environment defaults → service/environment overrides. All first-party layers use the same vocabulary. Maps merge; lists replace. Set an environment-variable, file, job, storage or mount entry to `null` to omit it. Files supplied through Argo must be plain YAML; Argo does not evaluate Helmfile `.gotmpl` files.
 
-Consume native vendor charts directly with their own values. A companion workload can use `service` separately where needed; using this toolkit does not require wrapping vendor products or combining their values into one file. The reusable service chart has no vendor or branding namespace.
+Native vendor charts retain their own values. Product integrations may compose them with this chart's dedicated helpers through ordinary Helm dependencies, keeping one release per complete service. Dependency aliases scope values explicitly; parents and siblings do not automatically share values. The reusable service chart has no vendor or branding namespace. See the [integration guide](docs/integrations.md) for its input-rendering helpers.
 
 ## Develop and verify
 
@@ -63,7 +63,7 @@ make check package
 pre-commit run --all-files
 ```
 
-`make check` exercises packaged examples, negative contracts, image inheritance, data ownership, engine-specific hooks, replica ownership, and promotion isolation. It validates Kubernetes 1.35 resources, selected pinned upstream CRD schemas, and Kargo's native step-configuration schemas. Upstream schemas are downloaded into ignored `.cache/`; no cluster or cloud credentials are needed.
+`make check` exercises packaged examples, negative contracts, image inheritance, data ownership, engine-specific hooks, replica ownership, and promotion isolation. Input transformations are evaluated with the actual ESO v2 engine at the existing `2.2.0` compatibility baseline, pinned in `tests/eso/go.mod`. It validates Kubernetes 1.35 resources, selected pinned upstream CRD schemas, and Kargo's native step-configuration schemas. Upstream schemas are downloaded into ignored `.cache/`; no cluster or cloud credentials are needed.
 
 Runtime readiness, traffic transitions, reloader behavior, ApplicationSet reconciliation, and live data adoption need separate environment evidence. The examples using `example.invalid` are explicit rendering fixtures with application-owned commands to replace before deployment; the whoami example uses a real pinned public image.
 

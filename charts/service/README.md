@@ -72,12 +72,15 @@ secretPrefix: test-
 secretStore: aws-ssm
 facts:
   tenant: example
+  databaseHost: database.example.internal
 environment:
   LOG_LEVEL: info
   TENANT: {fact: tenant}
   PORTAL: {url: {subdomain: portal, path: /register}}
   API: {endpoint: {service: api, path: /rest}}
-  TOKEN: {remoteSecret: application-token}
+  TOKEN: {ssm: application-token}
+  DATABASE_URL:
+    format: "postgresql://user:{ssm:database-password|urlquery}@{fact:databaseHost}/app"
   PASSWORD: {secret: {name: shared-credentials, key: password}}
   INSTANCE: {instance: name}
 ```
@@ -85,34 +88,51 @@ environment:
 - `url` uses `hostname` or `subdomain`/`domain`, optional `path`, and `scheme` (`https` by default).
 - `endpoint` uses an internal `service`, optional numeric `port`, `path`, and `scheme` (`http` by default).
 - `fact` reads a literal value from the environment's `facts` map; missing facts fail rendering.
-- `remoteSecret` generates an ExternalSecret and an explicit Secret-key reference. `secretPrefix` is prepended; an object `{key: /actual/key, property: field, absolute: true}` bypasses it and optionally selects a property.
+- `ssm` generates an ExternalSecret and an explicit Secret-key reference. `secretPrefix` is prepended; an object `{key: /actual/key, property: field, absolute: true}` bypasses it and optionally selects a property.
+- `format` substitutes only `{ssm:key}` and `{fact:name}`. Append `|urlquery` to URL-encode a substitution. Unknown references, operations and unmatched braces fail rendering. Other strings remain literal, including Go-template syntax.
 - `secret` consumes an existing same-namespace Secret/key without creating it.
 - `instance` exposes `name`, `namespace`, or `ip` through the downward API.
 - An entry set to `null` is omitted, allowing environment overrides to remove a canonical variable.
 
-Shared or vendor-consumed Secrets have one intentional owner through `secrets`:
+Inputs are declared where consumed. The chart generates ESO v2 transformations; Helm never fetches remote values. `secretRefresh` defaults to `1h`. Environment inputs use `<process-identity>-secrets`; optional `inputSecret` on a process/helper/job pins an existing target identity. Variables use their authored names as Secret keys unless an input explicitly pins `key`, for example `PASSWORD: {ssm: application-password, key: password}`. This preserves an existing consumer-facing key without a separate generation definition. Explicitly shared targets must agree on each key's source; conflicting definitions fail rendering. Only consumed output keys enter the target Secret, not internal transformation aliases.
 
-```yaml
-secrets:
-  credentials:
-    name: shared-credentials
-    refresh: 1h
-    values:
-      username: database-user
-      password: database-password
-    template:
-      url: 'postgres://{{ .username }}:{{ .password }}@database/app'
-```
+An individual remote-backed input may pin `name` when its existing Secret differs from the process's `inputSecret`. For example, `TOKEN: {ssm: token, name: shared-inputs, key: token}` generates and consumes exactly that target/key. `name` and `key` are identity controls, not remote-key overrides. A scalar may also be written as `{value: text}`; ordinary scalar entries remain the concise default.
 
-Map keys default to target/resource names; `name` pins an existing identity. `refresh` defaults to `1h`. `values` uses the same remote-key forms. `template` contains **ESO v2** templates, never Helm expressions; templates merge with fetched keys. Remote values remain in the secret manager. Consumers wait for required Secret keys to exist, not for a guaranteed fresh provider read on every release.
-
-When a secret-derived configuration file also needs non-secret environment context, declare `templateContext: {host: {fact: databaseHost}, database: app}` beside `template`, then reference `{{ $context.host }}` or `{{ $context.database }}` inside the ESO template. Context accepts literal strings/numbers/booleans and named `fact` references; it preserves types and requires `template`. Missing facts fail rendering. The chart safely serializes context as data for ESO v2's `fromJson`; context strings are never evaluated as Helm or ESO expressions. Fetched secrets remain accessible as ordinary ESO keys such as `{{ .password }}`.
+Helpers declare their inputs explicitly. Consuming a shared external Secret uses `secret`; service-owned generated inputs have one intentional owner. Consumers wait for required keys to exist, not for a guaranteed fresh provider read on every release.
 
 ## Files, storage and helpers
 
 See the [storage guide](../../docs/storage.md) for the complete storage/mount reference.
 
-`files` maps a logical name to `{path, content}` or `{path, secret: {name, key}}`. `path` is absolute. `name` can pin a literal file's ConfigMap identity; `key` names its stored/mounted filename (defaults to the logical name); `mode` is decimal Unix permissions, default 420 (`0644`). File mounts are read-only and use a subpath. Strings stay literal, including `{{ ... }}`. Secret-derived file content is produced by ESO under `secrets.template` and consumed using `files.*.secret`.
+`files` maps a logical name to an absolute `path` and exactly one source:
+
+| Source | Meaning |
+| --- | --- |
+| `content` | Literal text, including `{{ ... }}`. |
+| `ssm` | A complete remote file; accepts the environment input's remote-key forms. |
+| `format` | Text using the same restricted substitutions as environment inputs. |
+| `yaml`, `json` | Structured documents; leaves accept literals, `ssm`, `fact` and `format`. Serialization escapes values and preserves literal/fact types. |
+| `secret: {name, key}` | An existing external Secret key. |
+| `from` | Explicitly consume one uniquely named file declared by this service or a helper. |
+
+`name` pins a generated ConfigMap/Secret identity; `key` pins its stored and mounted filename, defaulting to the logical name. `from` reuses the source's identity/key and cannot redefine them. `mode` is decimal Unix permissions, default 420 (`0644`). Mounts are read-only and use subpaths. Files containing remote references become Secrets; other files become ConfigMaps. Resource-only services can declare shared files consumed by their jobs. Null removes a file; a dangling or ambiguous `from` fails validation.
+
+```yaml
+files:
+  connection:
+    path: /etc/service/connection.yaml
+    yaml:
+      database:
+        host: {fact: databaseHost}
+        password: {ssm: database-password}
+init:
+  prepare:
+    command: [prepare, /work/connection.yaml]
+    files:
+      connection: {from: connection, path: /work/connection.yaml}
+```
+
+See the [complete file example](../../examples/service/input-files.yaml). Document keys `ssm`, `fact` and `format` denote typed references; they are reserved at a reference leaf.
 
 `init` and `sidecars` map helper names to the same `image`, `command`, `args`, `workingDirectory`, `capacity`, `ports`, `health`, `environment`, `files`, `tokens`, `mounts`, `identity`, and `security` vocabulary. A helper inherits the **whole main image** only when its image object is absent. It does not inherit environment, files, tokens, mounts, or resources; helper resource reservations/ceilings are explicit and omitted when undeclared. Helper capacity has no instance count. Init helpers run in name order; use names expressing the required order when there are several. Sidecars are ordinary colocated containers.
 
@@ -153,4 +173,4 @@ Canary requires Gateway routing, HTTP exposure, and an explicit `updates.smoke` 
 
 `render.engine` is `helm` or `argo`; `render.part` is `all`, `inputs`, `runtime`, `application`, `scheduled`, or `task`; `render.routing` is `ingress` or `gateway`. Ordinary services and their dedicated helpers use `all` in one release. The optional application/scheduled split supports an explicitly independent scheduled-helper owner: `application` owns inputs, continuous workload, and release jobs; `scheduled` owns only CronJobs. `render.order` is a coordinated-service slot from 0 to 100, default 0, preserving input/job/runtime ordering within each slot. `render.task` is required for the `task` part and must name a declared manual job. Since 0.1.2, it can also select a manual job with `part: all`, keeping the job and its inputs in one release. Omitting it excludes manual jobs. These are finite rendering selections for maintained orchestration, not a second service specification. Their defaults are helm/all/ingress. Keep stable release owners; never alternate parts on an existing release.
 
-Since 0.1.2, an environment layer may set an individual `storage`, `mounts`, or `secrets.<name>.values` entry to null to remove it. Omit the matching references too; dangling storage mounts and empty managed Secrets fail validation.
+An environment layer may set an individual `environment`, `files`, `jobs`, `storage` or `mounts` entry to null to remove it. Omit matching references too; dangling storage mounts and file references fail validation. Omitting a job also omits inputs produced only for that job. Empty generated input resources are omitted.

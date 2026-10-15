@@ -87,7 +87,7 @@ app.kubernetes.io/instance: {{ include "mitis.service.name" . }}
 {{- end -}}
 
 {{- define "mitis.service.wave" -}}
-{{- if eq .root.Values.render.engine "argo" -}}
+{{- if eq ((.root.Values.render | default dict).engine | default "helm") "argo" -}}
 argocd.argoproj.io/sync-wave: {{ add (mul 100 .root.Values.render.order) .wave | quote }}
 {{- end -}}
 {{- end -}}

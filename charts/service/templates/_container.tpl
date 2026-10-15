@@ -44,12 +44,7 @@ env:
   {{- range $key, $value := . }}
   {{- if ne $value nil }}
   - name: {{ $key | quote }}
-    {{- if and (kindIs "map" $value) (hasKey $value "remoteSecret") }}
-    valueFrom:
-      secretKeyRef:
-        name: {{ $identity }}-secrets
-        key: {{ $key }}
-    {{- else if and (kindIs "map" $value) (hasKey $value "secret") }}
+    {{- if and (kindIs "map" $value) (hasKey $value "secret") }}
     valueFrom:
       secretKeyRef:
         name: {{ $value.secret.name }}
@@ -59,7 +54,15 @@ env:
       fieldRef:
         fieldPath: {{ index (dict "name" "metadata.name" "namespace" "metadata.namespace" "ip" "status.podIP") $value.instance }}
     {{- else }}
-    value: {{ include "mitis.service.value" (dict "root" $root "value" $value) | quote }}
+    {{- $input := include "mitis.service.environmentInput" (dict "root" $root "value" $value) | fromJson }}
+    {{- if $input.remotes }}
+    valueFrom:
+      secretKeyRef:
+        name: {{ $input.name | default ($c.inputSecret | default (printf "%s-secrets" $identity)) }}
+        key: {{ $input.key | default $key }}
+    {{- else }}
+    value: {{ $input.literal | toString | quote }}
+    {{- end }}
     {{- end }}
     {{- end }}
   {{- end }}
@@ -101,9 +104,10 @@ volumeMounts:
     {{- end }}
   {{- end }}
   {{- range $name, $file := $c.files }}
+  {{- $source := include "mitis.service.file" (dict "root" $root "file" $file "id" $.id "key" $name) | fromJson }}
   - name: {{ $.id }}-file-{{ $name }}
     mountPath: {{ $file.path | quote }}
-    subPath: {{ $file.key | default $name | quote }}
+    subPath: {{ $source.key | quote }}
     readOnly: true
   {{- end }}
   {{- range $name, $token := $c.tokens }}

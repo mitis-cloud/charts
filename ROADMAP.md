@@ -1,6 +1,19 @@
 # Roadmap
 
-These entries are **not supported chart values**. The current schema rejects them. Add capabilities only with a concrete consumer and a verified native lifecycle.
+## Current release direction
+
+`service:0.2.0` introduces consumption-first remote inputs, restricted formatting,
+structured YAML/JSON files, explicit helper sharing and nullable optional jobs.
+Product-owned vendor integrations use native Helm composition and the shared input
+helpers; vendor-specific settings remain outside the reusable chart.
+
+`delivery:0.1.0` retains the independent Argo CD/Kargo definition. Controller-runtime
+validation for promotion, canary traffic and planned-drain handover remains an
+adopter integration step; schema validation alone does not establish it.
+
+The following proposed storage entries are **not supported chart values**. The
+current schema rejects them. Add capabilities only with a concrete consumer and a
+verified native lifecycle.
 
 ## Native StatefulSet services
 
