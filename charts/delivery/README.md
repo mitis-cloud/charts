@@ -23,7 +23,7 @@ See [the complete example](../../examples/delivery/platform.yaml) and [values.sc
 
 The default `charts.service` points at `ghcr.io/mitis-cloud/charts`, chart `service`, and root scope `['']`. For an OCI Helm source, Argo's chart `repoURL` omits `oci://`; register it with Argo as an OCI-enabled Helm repository. Chart versions come from each environment, independently of images and the delivery chart's version.
 
-`serviceScopes` identifies actual native service-chart dependency aliases inside a wrapper, e.g. `[helpers]`. Delivery sets only the finite `render.engine`, `render.part`, and `render.routing` parameters at those scopes. Use an empty list for a direct vendor chart without service helpers. Ordinary first-party values stay at the root.
+`serviceScopes` identifies where a source's values reach the service chart. The default `['']` covers a direct `service` source. Use an empty list for a direct vendor chart. A product chart that embeds `service` as a dependency lists its aliases, e.g. `[helpers]`. Delivery sets only the finite `render.engine`, `render.part`, and `render.routing` parameters at those scopes. Ordinary first-party values stay at the root.
 
 ### Environments
 

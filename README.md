@@ -51,7 +51,7 @@ Values are direct and typed. Unknown fields fail validation. Strings are literal
 
 Use chart defaults → canonical service YAML → environment defaults → service/environment overrides. All first-party layers use the same vocabulary. Maps merge; lists replace. Set an environment-variable, file, job, storage or mount entry to `null` to omit it. Files supplied through Argo must be plain YAML; Argo does not evaluate Helmfile `.gotmpl` files.
 
-Native vendor charts retain their own values. Product integrations may compose them with this chart's dedicated helpers through ordinary Helm dependencies, keeping one release per complete service. Dependency aliases scope values explicitly; parents and siblings do not automatically share values. The reusable service chart has no vendor or branding namespace. See the [integration guide](docs/integrations.md) for its input-rendering helpers.
+Consume native vendor charts directly with their own values, and deploy anything they cannot express as a separate companion release of this chart. See [native vendor charts](docs/deployment.md#native-vendor-charts). The reusable service chart has no vendor or branding namespace. The [integration guide](docs/integrations.md) documents the input-rendering helpers for products that still package their own composition.
 
 ## Develop and verify
 
