@@ -1,0 +1,74 @@
+{{- $root := . -}}
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Project
+metadata:
+  name: {{ .Values.project }}
+  annotations:
+    argocd.argoproj.io/sync-wave: '-20'
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: ProjectConfig
+metadata:
+  name: {{ .Values.project }}
+  namespace: {{ .Values.project }}
+spec:
+  promotionPolicies:
+    {{- range $envName, $env := .Values.environments }}
+    {{- range $unitName := $env.units | default (keys $root.Values.releaseUnits | sortAlpha) }}
+    - stageSelector: {name: {{ $unitName }}-{{ $envName }}}
+      autoPromotionEnabled: {{ eq ($env.promotion | default "manual") "automatic" }}
+    {{- end }}
+    {{- end }}
+{{- range $unitName, $unit := .Values.releaseUnits }}
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Warehouse
+metadata:
+  name: {{ $unitName }}
+  namespace: {{ $root.Values.project }}
+spec:
+  interval: {{ $root.Values.discovery.interval }}
+  subscriptions:
+    {{- $repos := dict }}
+    {{- range $service := $unit.services }}
+    {{- range $image := $service.images }}
+    {{- if not (hasKey $repos $image) }}
+    - image:
+        repoURL: {{ $image | quote }}
+        imageSelectionStrategy: NewestBuild
+        allowTags: {{ $root.Values.discovery.allowTags | quote }}
+        discoveryLimit: {{ $root.Values.discovery.limit }}
+    {{- $_ := set $repos $image true }}
+    {{- end }}
+    {{- end }}
+    {{- end }}
+{{- end }}
+{{- range $envName, $env := .Values.environments }}
+{{- range $unitName := $env.units | default (keys $root.Values.releaseUnits | sortAlpha) }}
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: {{ $unitName }}-{{ $envName }}
+  namespace: {{ $root.Values.project }}
+spec:
+  requestedFreight:
+    - origin: {kind: Warehouse, name: {{ $unitName }}}
+      sources:
+        {{- if $env.upstream }}
+        stages:
+          {{- range $upstream := $env.upstream }}
+          - {{ $unitName }}-{{ $upstream }}
+          {{- end }}
+        {{- else }}
+        direct: true
+        {{- end }}
+  promotionTemplate:
+    spec:
+      steps:
+        - task: {name: {{ $unitName }}}
+          as: promote
+          vars:
+            - {name: environment, value: {{ $envName }}}
+{{- end }}
+{{- end }}

@@ -1,0 +1,119 @@
+{{- include "mitis.delivery.validate" . -}}
+{{- $root := . -}}
+{{- range $unitName, $unit := .Values.releaseUnits }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: {{ $root.Values.project }}-{{ $unitName }}
+  namespace: {{ $root.Values.argoNamespace }}
+spec:
+  goTemplate: true
+  goTemplateOptions: [missingkey=error]
+  syncPolicy:
+    preserveResourcesOnDeletion: true
+  generators:
+    - list:
+        elements:
+          {{- range $envName, $env := $root.Values.environments }}
+          {{- if has $unitName ($env.units | default (keys $root.Values.releaseUnits)) }}
+          - environment: {{ $envName }}
+            cluster: {{ $env.cluster | quote }}
+            namespace: {{ $env.namespace }}
+            routing: {{ $env.routing | default "gateway" }}
+            charts: {{ toJson $env.charts }}
+          {{- end }}
+          {{- end }}
+  template:
+    metadata:
+      name: '{{ $root.Values.project }}-{{ $unitName }}-{{ "{{ .environment }}" }}'
+      annotations:
+        kargo.akuity.io/authorized-stage: '{{ $root.Values.project }}:{{ $unitName }}-{{ "{{ .environment }}" }}'
+    spec:
+      project: '{{ $root.Values.project }}-{{ "{{ .environment }}" }}'
+      destination:
+        name: '{{ "{{ .cluster }}" }}'
+        namespace: '{{ "{{ .namespace }}" }}'
+      sources:
+        {{- range $serviceName, $service := $unit.services }}
+        {{- $chart := index $root.Values.charts $service.chart }}
+        - repoURL: {{ $chart.repository | quote }}
+          chart: {{ $chart.name }}
+          targetRevision: {{ printf "{{ index .charts %q }}" $service.chart | quote }}
+          helm:
+            releaseName: {{ $service.releaseName | default $serviceName }}
+            valueFiles:
+              - $values/{{ $root.Values.git.services }}/{{ $serviceName }}.yaml
+              - $values/{{ $root.Values.git.environments }}/{{ "{{ .environment }}" }}/defaults.yaml
+              - $values/{{ $root.Values.git.environments }}/{{ "{{ .environment }}" }}/{{ $serviceName }}.yaml
+            ignoreMissingValueFiles: false
+            {{- with $chart.serviceScopes }}
+            parameters:
+              {{- range $scope := . }}
+              {{- $prefix := ternary (printf "%s." $scope) "" (ne $scope "") }}
+              - name: {{ $prefix }}render.engine
+                value: argo
+              - name: {{ $prefix }}render.part
+                value: all
+              - name: {{ $prefix }}render.routing
+                value: '{{ "{{ .routing }}" }}'
+              - name: {{ $prefix }}render.order
+                value: {{ $service.order | default 0 | quote }}
+              {{- end }}
+            {{- end }}
+        {{- end }}
+        - repoURL: {{ $root.Values.git.repository | quote }}
+          targetRevision: {{ $root.Values.git.revision | quote }}
+          ref: values
+      syncPolicy:
+        syncOptions: [RespectIgnoreDifferences=true]
+        retry:
+          limit: 3
+          backoff: {duration: 5s, factor: 2, maxDuration: 1m}
+      ignoreDifferences:
+        - group: apps
+          kind: Deployment
+          jsonPointers: [/spec/template/metadata/annotations/reloader.stakater.com~1last-reloaded-from]
+        - group: argoproj.io
+          kind: Rollout
+          jsonPointers: [/spec/template/metadata/annotations/reloader.stakater.com~1last-reloaded-from]
+        - group: ''
+          kind: Service
+          jsonPointers: [/spec/selector/rollouts-pod-template-hash]
+        - group: gateway.networking.k8s.io
+          kind: HTTPRoute
+          jsonPointers: [/metadata/labels/rollouts.argoproj.io~1gatewayapi-canary]
+          jqPathExpressions: ['.spec.rules[].backendRefs[].weight']
+        {{- range $service := $unit.services }}
+        {{- range $target := $service.capacityTargets }}
+        - group: {{ ternary "apps" "argoproj.io" (eq $target.kind "Deployment") }}
+          kind: {{ $target.kind }}
+          name: {{ $target.name }}
+          namespace: '{{ "{{ .namespace }}" }}'
+          jsonPointers:
+            - /spec/replicas
+            - /metadata/annotations/understudy.sh~1base-replicas
+            - /metadata/annotations/understudy.sh~1target-revision
+        {{- end }}
+        {{- end }}
+{{- end }}
+{{- range $envName, $env := .Values.environments }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: {{ $root.Values.project }}-{{ $envName }}
+  namespace: {{ $root.Values.argoNamespace }}
+spec:
+  sourceRepos:
+    - {{ $root.Values.git.repository | quote }}
+    {{- range $chart := $root.Values.charts }}
+    - {{ $chart.repository | quote }}
+    {{- end }}
+  destinations:
+    - name: {{ $env.cluster | quote }}
+      namespace: {{ $env.namespace }}
+  namespaceResourceWhitelist:
+    - {group: '*', kind: '*'}
+  clusterResourceWhitelist: []
+{{- end }}

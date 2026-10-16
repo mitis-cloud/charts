@@ -1,0 +1,70 @@
+# Delivery chart
+
+The delivery chart declares native Argo CD and Kargo resources for named environments and independent release units. A release unit is one service with its helpers, or an explicitly coordinated group. Sharing an image does not group services automatically.
+
+See [the complete example](../../examples/delivery/platform.yaml) and [values.schema.json](values.schema.json). The example deliberately uses generic names, not an inferred stage/tenant model.
+
+## Inputs
+
+| Field | Meaning |
+| --- | --- |
+| `project` | Required Kargo project identity and Argo project/application prefix. |
+| `argoNamespace` | Argo CD control-plane namespace; default `argocd`. |
+| `git.repository` | Required HTTPS URL containing canonical service and environment YAML. |
+| `git.revision` | Authoritative configuration branch; default `main`. |
+| `git.services` | Canonical service directory, default `services`. |
+| `git.environments` | Environment directory, default `environments`. |
+| `charts` | Named chart definitions: `repository`, chart `name`, and optional `serviceScopes`. |
+| `environments` | Named deployment targets with cluster, namespace, chart pins, and explicit promotion relationships. |
+| `releaseUnits` | Named groups of services with chart selection, promoted image paths, and explicit delegated-capacity targets. |
+| `discovery.interval` | Warehouse refresh interval, default `5m`. |
+| `discovery.allowTags` | Allowed image-tag regular expression; default semantic release tags, optionally prefixed `v`. |
+| `discovery.limit` | Discovery history limit, default 20. |
+
+The default `charts.service` points at `ghcr.io/mitis-cloud/charts`, chart `service`, and root scope `['']`. For an OCI Helm source, Argo's chart `repoURL` omits `oci://`; register it with Argo as an OCI-enabled Helm repository. Chart versions come from each environment, independently of images and the delivery chart's version.
+
+`serviceScopes` identifies where a source's values reach the service chart. The default `['']` covers a direct `service` source. Use an empty list for a direct vendor chart. A product chart that embeds `service` as a dependency lists its aliases, e.g. `[helpers]`. Delivery sets only the finite `render.engine`, `render.part`, and `render.routing` parameters at those scopes. Ordinary first-party values stay at the root.
+
+### Environments
+
+Each environment requires:
+
+- `cluster`: an existing Argo destination cluster name.
+- `namespace`: the existing application namespace.
+- `charts`: a version pin for every chart used there.
+
+Optional `units` selects which defined release units exist there; omission selects all. `upstream` is a list of predecessor environment names. An empty list means direct Warehouse discovery. `promotion` is `manual` (default) or `automatic`. `routing` is `gateway` (default) or `ingress`.
+
+Names do not infer edges, create missing environments, or impose tenant/stage dimensions. Unknown references, missing pins, promotion cycles, and upstreams that lack a required unit fail rendering. Two upstreams are eligible sources, not a requirement that both separately approve the same Freight.
+
+### Release units
+
+`releaseUnits.<unit>.services` maps canonical service filenames (without `.yaml`) to:
+
+- `chart`: a key in `charts`.
+- `releaseName`: optional Helm release identity; defaults to the service key.
+- `order`: coordinated-service slot (0–100, default 0); a later service waits for earlier slots' after-jobs within the Application.
+- `images`: values paths mapped to image repositories, e.g. `image.digest: ghcr.io/example/backend`. Wrapper paths may be nested. A unit Warehouse subscribes once per unique repository.
+- `capacityTargets`: exact `{name, kind}` references for Understudy-managed Deployment/Rollout replicas. This declares field ownership for Argo, not capacity values. Match it to the service's actual protection resources and keep it absent for unprotected targets.
+
+A service belongs to only one release unit. Each environment × unit gets its own Kargo Stage, queue, automatic-promotion policy, health, and history. Every unit gets one ApplicationSet whose explicit list generator selects its environments and produces one coordinated Application per environment.
+
+Argo AppProjects permit namespace-scoped resources from the configured repositories at the configured destination. They do not grant cluster-scoped application resources; shared CRDs/controllers remain separately owned infrastructure.
+
+## Native promotion
+
+The chart emits Kargo Project, ProjectConfig, Warehouse, Stage, and PromotionTask resources. A task clones the configuration branch, updates only its unit's service/environment **digest** fields, commits/pushes with native conflict handling, synchronizes its exact Application, and waits for health.
+
+Kargo `yaml-update` changes existing scalar keys only. Seed every promoted digest field in `environments/<environment>/<service>.yaml` before activation. Supply real immutable digests; do not point a digest field at a tag. Missing fields are promotion failures, not permission to synthesize a second generated service file.
+
+Multiple repositories in one Warehouse do not prove images came from the same coordinated build. That coherence must be established by the project's build/release process if it is required. Concurrent promotions use native git-push integration; genuine edit conflicts fail visibly.
+
+Applications authorize precisely `<project>:<unit>-<environment>` for Kargo. Kargo writes Git, then requests synchronization to the commit actually pushed. Application source `targetRevision` remains the configured branch, preserving Git as the source of truth. The chart does not enable Argo automatic synchronization: Kargo requests full syncs after promotions, and configuration-only sync policy is an explicit operational choice for the adopting platform.
+
+## Lifecycle and evidence
+
+Install Kargo/Argo controllers and CRDs, Argo OCI/Git credentials, registered destinations, application namespaces, and Kargo Git/image credentials before activation. Kargo Project precedes namespaced Kargo resources. Controller bootstrap is not performed by this chart.
+
+All three service layers are required and consumed in the same order. Argo does not evaluate Helmfile templates. Jobs are failure-gating only inside their coordinated Application and with correct custom-resource health. See [deployment semantics](../../docs/deployment.md) and [controller prerequisites](../../docs/integrations.md).
+
+CI proves chart/package rendering, CRD schemas, stage/reference isolation, native Go template expansion into valid Applications, and native Kargo step-config shape. The expansion test uses Go's standard template engine on the chart's explicit list elements. It does not run the ApplicationSet controller, evaluate live Freight expressions, prove Git credentials, or establish runtime traffic/readiness. Verify those boundaries in the adopting environment before enabling promotion.

@@ -1,0 +1,14 @@
+name: identity-client
+image: {repository: example.invalid/identity-client, tag: fixture}
+account: identity-client
+apiToken: false
+tokens:
+  federation:
+    audience: sts.amazonaws.com
+    path: /var/run/identity
+    lifetime: 86400
+environment:
+  AWS_WEB_IDENTITY_TOKEN_FILE: /var/run/identity/token
+  AWS_ROLE_ARN: {fact: identityRole}
+facts:
+  identityRole: arn:aws:iam::000000000000:role/example

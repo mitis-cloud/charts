@@ -1,0 +1,40 @@
+{{- include "mitis.service.validate" . -}}
+{{- if and (has .Values.render.part (list "all" "runtime" "application")) .Values.response -}}
+{{- $name := include "mitis.service.name" . -}}
+{{- $http := .Values.http -}}
+{{- $subdomain := $name -}}{{ if hasKey $http "subdomain" }}{{ $subdomain = $http.subdomain }}{{ end -}}
+{{- $hostname := include "mitis.service.value" (dict "root" . "value" (dict "url" (dict "hostname" ($http.hostname | default "") "subdomain" $subdomain))) | trimPrefix "https://" -}}
+{{- $hosts := prepend ($http.aliases | default list) $hostname -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "mitis.service.labels" . | nindent 4 }}
+  annotations:
+    {{- include "mitis.service.wave" (dict "root" . "wave" 0) | nindent 4 }}
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: {{ ternary "[{\"HTTP\":80},{\"HTTPS\":443}]" "[{\"HTTPS\":443}]" ($http.redirectFromHttp | default false) | quote }}
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    {{- if hasKey $http "priority" }}
+    alb.ingress.kubernetes.io/group.order: {{ $http.priority | quote }}
+    {{- end }}
+    alb.ingress.kubernetes.io/actions.{{ $name }}: {{ toJson (dict "Type" "fixed-response" "FixedResponseConfig" (dict "StatusCode" (toString .Values.response.status) "ContentType" (.Values.response.contentType | default "text/plain") "MessageBody" .Values.response.body)) | quote }}
+    external-dns.alpha.kubernetes.io/hostname: {{ join "," $hosts | quote }}
+spec:
+  ingressClassName: {{ .Release.Namespace }}-{{ $http.exposure }}
+  rules:
+    {{- range $host := $hosts }}
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          {{- range $.Values.http.paths | default (list "/") }}
+          - path: {{ . | quote }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $name }}
+                port: {name: use-annotation}
+          {{- end }}
+    {{- end }}
+{{- end }}

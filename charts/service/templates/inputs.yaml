@@ -1,0 +1,71 @@
+{{- include "mitis.service.validate" . -}}
+{{- if has .Values.render.part (list "all" "inputs" "application") -}}
+{{- $root := . -}}
+{{- $name := include "mitis.service.name" . -}}
+{{- $inputs := include "mitis.service.inputs" . | fromJson -}}
+{{ include "mitis.service.inputResources" (dict "root" . "inputs" $inputs) }}
+{{- range $id, $volume := .Values.storage }}
+{{- if eq ($volume.access | default "") "shared" }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $volume.name | default (printf "%s-%s" $name $id) }}
+  labels:
+    {{- include "mitis.service.labels" $root | nindent 4 }}
+  annotations:
+    {{- if or (not (hasKey $volume "retain")) $volume.retain }}
+    helm.sh/resource-policy: keep
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+    {{- end }}
+    {{- include "mitis.service.wave" (dict "root" $root "wave" -20) | nindent 4 }}
+spec:
+  accessModes: [ReadWriteMany]
+  volumeMode: Filesystem
+  storageClassName: {{ required "sharedStorage must identify the environment's shared-filesystem class" $root.Values.sharedStorage }}
+  resources:
+    requests:
+      storage: {{ $volume.size | default "1Gi" | quote }}
+{{- end }}
+{{- end }}
+{{- if .Values.permissions }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  annotations:
+    {{- include "mitis.service.wave" (dict "root" $root "wave" -20) | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}-role
+  annotations:
+    {{- include "mitis.service.wave" (dict "root" $root "wave" -20) | nindent 4 }}
+rules:
+  {{- range .Values.permissions }}
+  - apiGroups: [{{ .group | quote }}]
+    resources: {{ toJson .resources }}
+    verbs: {{ toJson .actions }}
+    {{- with .names }}
+    resourceNames: {{ toJson . }}
+    {{- end }}
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}-rolebinding
+  annotations:
+    {{- include "mitis.service.wave" (dict "root" $root "wave" -20) | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}-role
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- end }}

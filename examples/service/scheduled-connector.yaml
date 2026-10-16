@@ -1,0 +1,21 @@
+name: directory-sync
+workload: resources
+architecture: amd64
+storage:
+  tmp: {temporary: true, medium: memory, sizeLimit: 64Mi}
+jobs:
+  synchronize:
+    schedule: '*/5 * * * *'
+    timeZone: Etc/UTC
+    timeout: 4m
+    retries: 1
+    startDeadline: 120
+    history: {successful: 1, failed: 3}
+    image: {repository: example.invalid/connector, tag: fixture}
+    command: [connector, sync]
+    identity: {user: 65532, group: 65532}
+    fileGroup: 65532
+    security: restricted
+    apiToken: false
+    capacity: {cpu: 10m, memory: 64Mi, memoryLimit: 128Mi}
+    mounts: {tmp: /tmp}

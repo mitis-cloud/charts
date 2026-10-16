@@ -1,0 +1,89 @@
+{{- include "mitis.service.validate" . -}}
+{{- if and (has .Values.render.part (list "all" "runtime" "application")) (eq .Values.workload "deployment") -}}
+{{- $name := include "mitis.service.name" . -}}
+{{- $canary := eq .Values.updates.strategy "canary" -}}
+apiVersion: {{ ternary "argoproj.io/v1alpha1" "apps/v1" $canary }}
+kind: {{ ternary "Rollout" "Deployment" $canary }}
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "mitis.service.labels" . | nindent 4 }}
+  annotations:
+    {{- include "mitis.service.wave" (dict "root" . "wave" 0) | nindent 4 }}
+    {{- if and .Values.updates.reload .Values.updates.reloadSecrets }}
+    reloader.stakater.com/auto: 'true'
+    reloader.stakater.com/rollout-strategy: annotations
+    {{- end }}
+spec:
+  replicas: {{ .Values.capacity.instances }}
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      {{- include "mitis.service.selector" . | nindent 6 }}
+  strategy:
+    {{- if $canary }}
+    canary:
+      stableService: {{ $name }}
+      canaryService: {{ $name }}-candidate
+      maxSurge: 100%
+      maxUnavailable: 0
+      trafficRouting:
+        plugins:
+          argoproj-labs/gatewayAPI:
+            httpRoute: {{ $name }}
+            namespace: {{ .Release.Namespace }}
+      steps:
+        - setCanaryScale:
+            replicas: {{ .Values.capacity.instances }}
+        - setWeight: 0
+        - analysis:
+            templates: [{templateName: {{ $name }}-smoke}]
+        - setWeight: 10
+        - analysis:
+            templates: [{templateName: {{ $name }}-smoke}]
+        - setWeight: 50
+        - analysis:
+            templates: [{templateName: {{ $name }}-smoke}]
+        - setWeight: 100
+    {{- else if eq .Values.updates.strategy "replace" }}
+    type: Recreate
+    {{- else }}
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "mitis.service.selector" . | nindent 8 }}
+      annotations:
+        {{- if .Values.updates.reload }}
+        checksum/configuration: {{ include "mitis.service.configuration" . | sha256sum }}
+        {{- end }}
+        {{- with .Values.updates.restart }}
+        mitis.cloud/restart: {{ . | quote }}
+        {{- end }}
+    spec:
+      {{- include "mitis.service.pod" (dict "root" . "container" .Values "id" "main" "prefix" "" "init" .Values.init "sidecars" .Values.sidecars "restart" "Always") | nindent 6 }}
+{{- if .Values.disruption.handover }}
+---
+apiVersion: apps.understudy.sh/v1alpha1
+kind: Understudy
+metadata:
+  name: {{ .Values.disruption.name | default $name }}
+  labels:
+    {{- include "mitis.service.labels" . | nindent 4 }}
+  annotations:
+    {{- include "mitis.service.wave" (dict "root" . "wave" 0) | nindent 4 }}
+spec:
+  targetRef:
+    kind: {{ ternary "Rollout" "Deployment" $canary }}
+    name: {{ $name }}
+  {{- if eq .Values.render.engine "argo" }}
+  baselineReplicas: {{ .Values.capacity.instances }}
+  {{- end }}
+  surgeReplicas: 1
+  readinessDeadlineSeconds: {{ include "mitis.service.seconds" (.Values.disruption.maxWait | default "10m") }}
+{{- end }}
+{{- end }}

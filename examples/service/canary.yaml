@@ -1,0 +1,29 @@
+name: api
+image:
+  repository: example.invalid/application
+  tag: test-fixture
+capacity:
+  instances: 2
+availability:
+  zones: 2
+ports:
+  http: 8080
+http:
+  exposure: public
+  redirectFromHttp: true
+  hostname: api.test.example.com
+health:
+  readiness: {http: /ready, port: http}
+updates:
+  strategy: canary
+  smoke:
+    command: [/app/smoke]
+    timeout: 2m
+    capacity: {cpu: 100m, memory: 64Mi, memoryLimit: 128Mi}
+    environment:
+      TARGET_URL: {endpoint: {service: api-candidate}}
+disruption:
+  handover: true
+render:
+  engine: argo
+  routing: gateway

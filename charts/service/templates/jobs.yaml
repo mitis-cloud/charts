@@ -1,0 +1,32 @@
+{{- include "mitis.service.validate" . -}}
+{{- $root := . -}}
+{{- range $key, $job := .Values.jobs -}}
+{{- $manual := eq ($job.run | default "") "manual" -}}
+{{- $selected := and (not $manual) (has $root.Values.render.part (list "all" "runtime")) -}}
+{{- $selected = or $selected (and (not $manual) (not $job.schedule) (eq $root.Values.render.part "application")) (and $job.schedule (eq $root.Values.render.part "scheduled")) (and $manual (has $root.Values.render.part (list "all" "task")) (eq $root.Values.render.task $key)) -}}
+{{- if $selected -}}
+{{ include "mitis.service.job" (dict "root" $root "job" $job "key" $key "id" (printf "job-%s" $key)) }}
+{{- end -}}
+{{- end -}}
+{{- if and (eq .Values.updates.strategy "canary") (has .Values.render.part (list "all" "runtime" "application")) -}}
+{{- $name := include "mitis.service.name" . -}}
+{{- $smoke := deepCopy .Values.updates.smoke -}}
+{{- $_ := set $smoke "run" "after-ready" -}}
+{{ include "mitis.service.job" (dict "root" . "job" $smoke "key" "smoke" "id" "smoke") }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: {{ $name }}-smoke
+  annotations:
+    {{- include "mitis.service.wave" (dict "root" . "wave" 0) | nindent 4 }}
+spec:
+  metrics:
+    - name: smoke
+      count: 1
+      failureLimit: 0
+      provider:
+        job:
+          spec:
+            {{- include "mitis.service.jobSpec" (dict "root" . "job" $smoke "name" (printf "%s-smoke" $name) "id" "smoke") | nindent 12 }}
+{{- end }}
