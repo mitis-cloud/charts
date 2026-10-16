@@ -11,6 +11,37 @@ helpers; vendor-specific settings remain outside the reusable chart.
 validation for promotion, canary traffic and planned-drain handover remains an
 adopter integration step; schema validation alone does not establish it.
 
+## Cloud provider profiles
+
+Status: direction, not implemented. No values below are accepted by the current schema.
+
+Today the chart assumes AWS by default (AWS Load Balancer Controller ingress, ACM, Route53 private zones, an `aws-ssm` secret store) and leaves every cloud resource to separate infrastructure tooling. See [Prerequisites and boundary](docs/prerequisites.md#how-cloud-specific-the-charts-are-today).
+
+Direction: keep the service interface cloud-neutral and implement each capability per provider inside Mitis, selected by one platform setting, instead of deferring cloud-specific work to another tool.
+
+```yaml
+platform:
+  provider: aws   # aws | gcp | azure
+```
+
+| Neutral capability | AWS | GCP | Azure |
+| --- | --- | --- | --- |
+| Public/private HTTP exposure | ALB via AWS Load Balancer Controller | GKE Gateway / Ingress | Application Gateway for Containers |
+| Certificates | ACM | Certificate Manager | Key Vault certificates |
+| DNS | Route53 (public and private zones) | Cloud DNS | Azure DNS |
+| Remote inputs | SSM Parameter Store / Secrets Manager | Secret Manager | Key Vault |
+| Workload identity | IRSA / EKS Pod Identity | GKE Workload Identity | Microsoft Entra Workload ID |
+| Shared filesystem | EFS | Filestore | Azure Files |
+
+Decisions required before implementation:
+
+- **Who creates cloud resources.** Options are Kubernetes-native provider operators (AWS Controllers for Kubernetes, Config Connector, Azure Service Operator), a single cross-cloud control plane such as Crossplane, or chart-owned Kubernetes objects only (IngressClassParams, Gateways, SecretStores) with cloud resources still provisioned outside. The first two make the charts depend on another controller per cloud; the last keeps the current boundary.
+- **Ownership and lifecycle.** Durable resources (certificates, DNS zones, filesystems, identities) must survive a Helm uninstall and must not be adopted from another owner implicitly.
+- **Parity scope.** Which capabilities each provider must support before it is offered, and how unsupported combinations fail validation.
+- **Migration.** Existing AWS installations must keep their current rendered resources when `platform.provider: aws` becomes explicit.
+
+Each provider needs its own validated integration evidence. Rendering against schemas does not establish controller behavior.
+
 The following proposed storage entries are **not supported chart values**. The
 current schema rejects them. Add capabilities only with a concrete consumer and a
 verified native lifecycle.

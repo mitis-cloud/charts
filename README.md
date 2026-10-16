@@ -27,6 +27,12 @@
 - **Secrets declared where they're used.** Reference SSM parameters, facts or formatted strings directly; the chart generates the External Secrets plumbing.
 - **Same files, any engine.** Deploy with Helmfile today; promote with Argo CD and Kargo when you're ready.
 
+## Before you start
+
+These charts are opinionated: adopting them means adopting a defined platform. They render application resources and **never create cloud resources or install controllers**. Your cluster needs Kubernetes 1.35+, and by default External Secrets Operator, Stakater Reloader, the AWS Load Balancer Controller and external-dns, plus whatever the features you enable require.
+
+**Read [Prerequisites and boundary](docs/prerequisites.md) first.** It lists every dependency, the feature that triggers it, and exactly where the charts stop and your infrastructure begins.
+
 ## Charts
 
 | Chart | What it does | Package |
@@ -81,6 +87,7 @@ Values flow from chart defaults, to the canonical service file, to environment d
 
 | Guide | Covers |
 | --- | --- |
+| [Prerequisites and boundary](docs/prerequisites.md) | Required controllers, CRDs and infrastructure; what the charts never create |
 | [Service reference](charts/service/README.md) | Every field of the service chart |
 | [Storage](docs/storage.md) | Shared, existing and temporary storage; ownership and retention |
 | [Deployment](docs/deployment.md) | Helmfile, Argo CD, jobs and native layering |

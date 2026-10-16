@@ -1,6 +1,6 @@
 # Supported integration contracts
 
-These charts render application resources. Infrastructure installs and configures controllers, CRDs, storage, route listeners, certificates, secrets access, and application health customizations.
+These charts render application resources. Infrastructure installs and configures controllers, CRDs, storage, route listeners, certificates, secrets access, and application health customizations. Start with [Prerequisites and boundary](prerequisites.md) for the complete dependency list; this guide details each contract.
 
 ## Reference versions and evidence
 

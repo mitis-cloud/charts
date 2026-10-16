@@ -1,5 +1,8 @@
 # Delivery chart
 
+> [!IMPORTANT]
+> This chart requires Argo CD, Kargo and the infrastructure they orchestrate, none of which it installs. Read [Prerequisites and boundary](../../docs/prerequisites.md) before activating it.
+
 The delivery chart declares native Argo CD and Kargo resources for named environments and independent release units. A release unit is one service with its helpers, or an explicitly coordinated group. Sharing an image does not group services automatically.
 
 See [the complete example](../../examples/delivery/platform.yaml) and [values.schema.json](values.schema.json). The example deliberately uses generic names, not an inferred stage/tenant model.

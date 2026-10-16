@@ -1,5 +1,8 @@
 # Service chart
 
+> [!IMPORTANT]
+> This chart depends on controllers and infrastructure it does not install or create, several of them enabled by default. Read [Prerequisites and boundary](../../docs/prerequisites.md) before deploying.
+
 The service definition is a closed interface. [values.schema.json](values.schema.json) is the exact type contract; this guide explains behavior. [Examples](../../examples/service) are rendered from packaged charts in CI.
 
 ## Process and capacity
