@@ -14,3 +14,7 @@ data:
       scheme: internal
       inboundCIDRs: [192.0.2.0/24]
   privateNetworks: [198.51.100.0/24]
+  postgres:
+    providerConfig: postgres
+    host: postgres.example.invalid
+    port: 5432

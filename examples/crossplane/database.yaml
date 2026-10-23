@@ -1,0 +1,17 @@
+apiVersion: mitis.cloud/v1alpha1
+kind: Database
+metadata:
+  name: backend
+  namespace: example
+spec:
+  name: example-backend
+  extensions: [pg_trgm]
+  schemas:
+    public: {operator: full, reader: read-execute, adminMaintain: true}
+    reporting: {operator: read, reader: read}
+  accounts:
+    migrator: admin
+    api: operator
+  secrets:
+    store: aws-ssm
+    key: example-pgsql-backend

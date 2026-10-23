@@ -2,29 +2,258 @@
   "$schema": "https://json-schema.org/draft-07/schema#",
   "type": "object",
   "additionalProperties": false,
-  "required": ["namespace"],
+  "required": [
+    "namespace"
+  ],
   "properties": {
-    "global": {"type": "object"},
-    "namespace": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", "maxLength": 63, "description": "Application namespace the environment owns; also the environment's name."},
-    "exposures": {"type": "array", "uniqueItems": true, "items": {"enum": ["public", "private"]}, "description": "Exposure profiles services may select with http.exposure."},
+    "global": {
+      "type": "object"
+    },
+    "namespace": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63,
+      "description": "Application namespace the environment owns; also the environment's name."
+    },
+    "exposures": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "public",
+          "private"
+        ]
+      },
+      "description": "Exposure profiles services may select with http.exposure."
+    },
     "isolation": {
-      "type": "object", "additionalProperties": false,
+      "type": "object",
+      "additionalProperties": false,
       "properties": {
-        "enabled": {"type": "boolean", "description": "Restrict outbound traffic to the namespace, cluster DNS, the internet and privatePorts on platform private networks."},
-        "privatePorts": {"type": "array", "uniqueItems": true, "items": {"type": "integer", "minimum": 1, "maximum": 65535}}
+        "enabled": {
+          "type": "boolean",
+          "description": "Restrict outbound traffic to the namespace, cluster DNS, the internet and privatePorts on platform private networks."
+        },
+        "privatePorts": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          }
+        }
       }
     },
     "maintenance": {
-      "type": "object", "additionalProperties": false,
+      "type": "object",
+      "additionalProperties": false,
       "properties": {
-        "enabled": {"type": "boolean"},
-        "hostnames": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
-        "status": {"type": "integer", "minimum": 200, "maximum": 599},
-        "contentType": {"enum": ["text/plain", "text/css", "text/html", "application/javascript", "application/json"]},
-        "body": {"type": "string", "maxLength": 1024}
+        "enabled": {
+          "type": "boolean"
+        },
+        "hostnames": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "status": {
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 599
+        },
+        "contentType": {
+          "enum": [
+            "text/plain",
+            "text/css",
+            "text/html",
+            "application/javascript",
+            "application/json"
+          ]
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 1024
+        }
       },
-      "if": {"properties": {"enabled": {"const": true}}, "required": ["enabled"]},
-      "then": {"properties": {"hostnames": {"minItems": 1}}}
+      "if": {
+        "properties": {
+          "enabled": {
+            "const": true
+          }
+        },
+        "required": [
+          "enabled"
+        ]
+      },
+      "then": {
+        "properties": {
+          "hostnames": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "store",
+        "prefix"
+      ],
+      "description": "Secret store and remote key prefix for the environment's values, and the values generated for it when absent.",
+      "properties": {
+        "store": {
+          "type": "string",
+          "minLength": 1
+        },
+        "prefix": {
+          "type": "string"
+        },
+        "generated": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "enum": [
+                  "password",
+                  "string",
+                  "username",
+                  "manual",
+                  "value"
+                ]
+              },
+              "length": {
+                "type": "integer",
+                "minimum": 8,
+                "maximum": 128
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "type": {
+                      "const": "string"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "length"
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "type": {
+                      "const": "value"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "value"
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "databases": {
+      "type": "object",
+      "description": "PostgreSQL databases named <namespace>-<key>.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "extensions": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            }
+          },
+          "schemas": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "operator",
+                "reader"
+              ],
+              "properties": {
+                "operator": {
+                  "enum": [
+                    "full",
+                    "read",
+                    "read-execute",
+                    "none"
+                  ]
+                },
+                "reader": {
+                  "enum": [
+                    "full",
+                    "read",
+                    "read-execute",
+                    "none"
+                  ]
+                },
+                "existingFunctions": {
+                  "type": "boolean"
+                },
+                "adminMaintain": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "accounts": {
+            "type": "object",
+            "additionalProperties": {
+              "enum": [
+                "admin",
+                "operator",
+                "reader"
+              ]
+            }
+          }
+        }
+      }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "databases": {
+            "minProperties": 1
+          }
+        },
+        "required": [
+          "databases"
+        ]
+      },
+      "then": {
+        "required": [
+          "secrets"
+        ]
+      }
+    }
+  ]
 }

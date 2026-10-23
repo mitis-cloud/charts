@@ -135,6 +135,119 @@ spec:
                 {{- end }}
             {{- end }}
             {{- end }}
+            {{- range $name, $database := $spec.databases }}
+            ---
+            apiVersion: mitis.cloud/v1alpha1
+            kind: Database
+            metadata:
+              name: {{ $name }}
+              namespace: {{ $namespace }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: database-{{ $name }}
+            spec:
+              name: {{ $namespace }}-{{ $name }}
+              {{- with $database.extensions }}
+              extensions: {{ toJson . }}
+              {{- end }}
+              {{- with $database.schemas }}
+              schemas: {{ toJson . }}
+              {{- end }}
+              {{- with $database.accounts }}
+              accounts: {{ toJson . }}
+              {{- end }}
+              secrets:
+                store: {{ $spec.secrets.store }}
+                key: {{ $spec.secrets.prefix }}pgsql-{{ $name }}
+            {{- end }}
+            {{- with $spec.secrets }}
+            {{- $store := .store }}
+            {{- $prefix := .prefix }}
+            {{- range $key, $value := .generated }}
+            {{- $id := printf "generated-%s" $key }}
+            {{- if has $value.type (list "manual" "value") }}
+            ---
+            apiVersion: v1
+            kind: Secret
+            metadata:
+              name: {{ $id }}
+              namespace: {{ $namespace }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: {{ $id }}-source
+                gotemplating.fn.crossplane.io/ready: "True"
+            stringData:
+              value: {{ ternary "-" $value.value (eq $value.type "manual") | quote }}
+            {{- else }}
+            ---
+            apiVersion: generators.external-secrets.io/v1alpha1
+            kind: Password
+            metadata:
+              name: {{ $id }}
+              namespace: {{ $namespace }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: {{ $id }}-generator
+                gotemplating.fn.crossplane.io/ready: "True"
+            spec:
+              secretKeys: [value]
+              allowRepeat: true
+              {{- if eq $value.type "password" }}
+              length: {{ $value.length | default 32 }}
+              symbolCharacters: '!#$%^&*()<>-_'
+              {{- else if eq $value.type "string" }}
+              length: {{ $value.length }}
+              symbols: 0
+              {{- else }}
+              length: {{ $value.length | default 12 }}
+              noUpper: true
+              digits: 0
+              symbols: 0
+              {{- end }}
+            ---
+            apiVersion: external-secrets.io/v1
+            kind: ExternalSecret
+            metadata:
+              name: {{ $id }}
+              namespace: {{ $namespace }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: {{ $id }}-source
+            spec:
+              refreshPolicy: CreatedOnce
+              target:
+                name: {{ $id }}
+              dataFrom:
+                - sourceRef:
+                    generatorRef:
+                      apiVersion: generators.external-secrets.io/v1alpha1
+                      kind: Password
+                      name: {{ $id }}
+            {{- end }}
+            ---
+            apiVersion: external-secrets.io/v1alpha1
+            kind: PushSecret
+            metadata:
+              name: {{ $id }}
+              namespace: {{ $namespace }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: {{ $id }}
+            spec:
+              updatePolicy: IfNotExists
+              secretStoreRefs:
+                - kind: ClusterSecretStore
+                  name: {{ $store }}
+              selector:
+                secret:
+                  name: {{ $id }}
+              data:
+                - match:
+                    secretKey: value
+                    remoteRef:
+                      remoteKey: {{ $prefix }}{{ $key }}
+                  metadata:
+                    apiVersion: kubernetes.external-secrets.io/v1alpha1
+                    kind: PushSecretMetadata
+                    spec:
+                      secretType: SecureString
+            {{- end }}
+            {{- end }}
             {{- with $spec.maintenance }}
             {{- if .enabled }}
             ---
@@ -165,3 +278,6 @@ spec:
                 {{- end }}
             {{- end }}
             {{- end }}
+    - step: ready
+      functionRef:
+        name: crossplane-contrib-function-auto-ready

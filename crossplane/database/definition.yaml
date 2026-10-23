@@ -1,0 +1,68 @@
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: databases.mitis.cloud
+spec:
+  group: mitis.cloud
+  names:
+    kind: Database
+    plural: databases
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              description: A PostgreSQL database on the platform's shared instance, with admin, operator and reader groups and the service accounts in them.
+              required: [name, secrets]
+              properties:
+                name:
+                  type: string
+                  description: Database name. Roles are named after it.
+                  maxLength: 40
+                  x-kubernetes-validations:
+                    - rule: self == oldSelf
+                      message: A database cannot be renamed.
+                extensions:
+                  type: array
+                  items: {type: string}
+                  x-kubernetes-list-type: set
+                schemas:
+                  type: object
+                  description: Access per schema. public always exists; others are created and owned by the admin group.
+                  additionalProperties:
+                    type: object
+                    required: [operator, reader]
+                    properties:
+                      operator: {type: string, enum: [full, read, read-execute, none]}
+                      reader: {type: string, enum: [full, read, read-execute, none]}
+                      existingFunctions:
+                        type: boolean
+                        default: true
+                        description: Grant on functions that already exist, not only on future ones.
+                      adminMaintain:
+                        type: boolean
+                        default: false
+                        description: Also grant MAINTAIN on tables to the admin group.
+                accounts:
+                  type: object
+                  description: Login roles by name and the group each belongs to. Admin accounts act as the admin group, which owns what they create.
+                  additionalProperties:
+                    type: string
+                    enum: [admin, operator, reader]
+                secrets:
+                  type: object
+                  description: Where account passwords and connection URLs are kept. A value is generated only when the remote key does not exist yet.
+                  required: [store, key]
+                  properties:
+                    store:
+                      type: string
+                      description: ClusterSecretStore holding the values.
+                    key:
+                      type: string
+                      description: Remote key prefix; values are <key>-<account>-password and <key>-<account>-url.
