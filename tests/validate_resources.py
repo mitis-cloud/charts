@@ -53,6 +53,16 @@ STEPS = [
 ]
 
 
+def merge_patch(target, patch):
+    """Apply a template patch the way the ApplicationSet controller does: maps merge, lists replace."""
+    if not isinstance(patch, dict) or not isinstance(target, dict):
+        return copy.deepcopy(patch)
+    result = copy.deepcopy(target)
+    for key, value in patch.items():
+        result[key] = merge_patch(result.get(key), value) if key in result else copy.deepcopy(value)
+    return result
+
+
 def download(url):
     path = CACHE / hashlib.sha256(url.encode()).hexdigest()
     if not path.exists():
@@ -136,7 +146,10 @@ def main():
                         ["go", "run", str(ROOT / "tests/expand_templates.go")],
                         input=json.dumps(
                             {
-                                "template": spec["template"],
+                                "template": {
+                                    "app": spec["template"],
+                                    "patch": spec.get("templatePatch", ""),
+                                },
                                 "elements": spec["generators"][0]["list"]["elements"],
                             }
                         ),
@@ -144,7 +157,10 @@ def main():
                         capture_output=True,
                         check=True,
                     )
-                    for app in json.loads(expanded.stdout):
+                    for result in json.loads(expanded.stdout):
+                        app = merge_patch(
+                            result["app"], yaml.safe_load(result["patch"]) or {}
+                        )
                         app.update(
                             apiVersion="argoproj.io/v1alpha1", kind="Application"
                         )
@@ -157,7 +173,7 @@ def main():
                         for source in app["spec"]["sources"]:
                             if "helm" in source:
                                 files = source["helm"]["valueFiles"]
-                                assert len(files) == 3 and len(set(files)) == 3
+                                assert len(files) >= 3 and len(set(files)) == len(files)
                                 assert all("//" not in file for file in files)
                         applications.append(app)
                 if doc["kind"] == "AnalysisTemplate":

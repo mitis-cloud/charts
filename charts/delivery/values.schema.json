@@ -23,11 +23,14 @@
         "upstream": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/name"}},
         "promotion": {"enum": ["manual", "automatic"]},
         "units": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/definitions/name"}},
-        "routing": {"enum": ["ingress", "gateway"]}
+        "routing": {"enum": ["ingress", "gateway"]},
+        "layers": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-zA-Z0-9_-][a-zA-Z0-9_/-]*\\.yaml$"}, "description": "Repository-relative values files applied to every service between its definition and the environment's own files, in order."},
+        "environment": {"type": "object", "description": "Values for the environment chart, deployed and synchronized automatically. Requires the environment chart pin; the namespace comes from the environment."}
       }
     }},
     "releaseUnits": {"type": "object", "minProperties": 1, "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {
       "type": "object", "additionalProperties": false, "required": ["services"], "properties": {
+        "allowTags": {"type": "string", "minLength": 1, "description": "Image-tag regular expression for this unit's Warehouse, overriding discovery.allowTags."},
         "services": {"type": "object", "minProperties": 1, "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {
           "type": "object", "additionalProperties": false, "required": ["chart", "images"], "properties": {
             "chart": {"$ref": "#/definitions/name"}, "releaseName": {"$ref": "#/definitions/name"},

@@ -683,12 +683,13 @@ class DeliveryContract(unittest.TestCase):
         # Kargo >= 1.11 rejects the deprecated allowTags field at discovery time.
         docs = render(self.chart, self.example)
         for warehouse in (d for d in docs if d["kind"] == "Warehouse"):
+            expected = {
+                "backend": r"^v?[0-9]+\.[0-9]+\.[0-9]+$",
+                "worker": r"^[0-9a-f]{7}$",
+            }[warehouse["metadata"]["name"]]
             for subscription in warehouse["spec"]["subscriptions"]:
                 self.assertNotIn("allowTags", subscription["image"])
-                self.assertEqual(
-                    [r"^v?[0-9]+\.[0-9]+\.[0-9]+$"],
-                    subscription["image"]["allowTagsRegexes"],
-                )
+                self.assertEqual([expected], subscription["image"]["allowTagsRegexes"])
 
     def test_unknown_references_cycles_and_exclusions(self):
         for invalid in [
@@ -709,6 +710,67 @@ class DeliveryContract(unittest.TestCase):
             {"environments": {"production": {"units": ["backend"]}}},
         )
         self.assertEqual(3, sum(d["kind"] == "Stage" for d in docs))
+
+    def expanded_sources(self, docs, unit, environment):
+        appset = resource(docs, "ApplicationSet", f"example-{unit}")
+        element = next(
+            e for e in appset["spec"]["generators"][0]["list"]["elements"]
+            if e["environment"] == environment
+        )
+        result = subprocess.run(
+            ["go", "run", str(ROOT / "tests/expand_templates.go")],
+            input=json.dumps({"template": {"patch": appset["spec"]["templatePatch"]}, "elements": [element]}),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        return yaml.safe_load(json.loads(result.stdout)[0]["patch"])["spec"]["sources"]
+
+    def test_layers_sit_between_service_and_environment_files(self):
+        docs = render(self.chart, self.example)
+        api = self.expanded_sources(docs, "backend", "test")[0]
+        self.assertEqual(api["targetRevision"], "0.1.0")
+        self.assertEqual(
+            api["helm"]["valueFiles"],
+            [
+                "$values/services/api.yaml",
+                "$values/stages/test.yaml",
+                "$values/environments/test/defaults.yaml",
+                "$values/environments/test/api.yaml",
+            ],
+        )
+        production = self.expanded_sources(docs, "backend", "production")[0]
+        self.assertEqual(len(production["helm"]["valueFiles"]), 3)
+        render(
+            self.chart,
+            self.example,
+            {"environments": {"test": {"layers": ["../outside.yaml"]}}},
+            success=False,
+        )
+
+    def test_environment_values_deploy_the_environment_chart(self):
+        docs = render(self.chart, self.example)
+        app = resource(docs, "Application", "example-test-environment")
+        self.assertEqual(app["spec"]["source"]["chart"], "environment")
+        self.assertEqual(app["spec"]["source"]["targetRevision"], "0.1.0")
+        self.assertEqual(app["spec"]["source"]["helm"]["valuesObject"]["namespace"], "example-test")
+        self.assertTrue(app["spec"]["syncPolicy"]["automated"]["selfHeal"])
+        self.assertEqual(
+            resource(docs, "AppProject", "example-test")["spec"]["clusterResourceWhitelist"],
+            [{"group": "mitis.cloud", "kind": "Environment"}],
+        )
+        self.assertEqual(
+            resource(docs, "AppProject", "example-production")["spec"]["clusterResourceWhitelist"], []
+        )
+        self.assertFalse(
+            [d for d in docs if d["kind"] == "Application" and d["metadata"]["name"] == "example-production-environment"]
+        )
+        render(
+            self.chart,
+            self.example,
+            {"environments": {"test": {"charts": {"environment": None}}}},
+            success=False,
+        )
 
     def test_package_and_lint(self):
         with tempfile.TemporaryDirectory() as directory:
