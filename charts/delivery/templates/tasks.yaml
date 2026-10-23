@@ -39,11 +39,9 @@ spec:
       config:
         apps:
           - name: {{ $root.Values.project }}-{{ $unitName }}-{{ "${{ vars.environment }}" }}
+            # No desiredRevision: every environment tracks the shared branch, so pinning the pushed
+            # commit would mark other environments unhealthy after any later commit.
             namespace: {{ $root.Values.argoNamespace }}
-            sources:
-              - repoURL: {{ $root.Values.git.repository | quote }}
-                desiredRevision: '{{ "${{ task.outputs.push.commit }}" }}'
-                updateTargetRevision: false
     - uses: argocd-wait
       retry: {timeout: 15m}
       config:

@@ -675,11 +675,9 @@ class DeliveryContract(unittest.TestCase):
             any("/spec/replicas" in rule.get("jsonPointers", []) for rule in ignores)
         )
         task = resource(docs, "PromotionTask", "backend")
-        push = next(s for s in task["spec"]["steps"] if s["uses"] == "argocd-update")
-        self.assertEqual(
-            "${{ task.outputs.push.commit }}",
-            push["config"]["apps"][0]["sources"][0]["desiredRevision"],
-        )
+        sync = next(s for s in task["spec"]["steps"] if s["uses"] == "argocd-update")
+        # Health must not pin the shared branch to one promotion's commit.
+        self.assertNotIn("sources", sync["config"]["apps"][0])
 
     def test_warehouse_uses_supported_tag_selection(self):
         # Kargo >= 1.11 rejects the deprecated allowTags field at discovery time.

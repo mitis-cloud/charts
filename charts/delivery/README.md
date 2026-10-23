@@ -62,7 +62,7 @@ Kargo `yaml-update` changes existing scalar keys only. Seed every promoted diges
 
 Multiple repositories in one Warehouse do not prove images came from the same coordinated build. That coherence must be established by the project's build/release process if it is required. Concurrent promotions use native git-push integration; genuine edit conflicts fail visibly.
 
-Applications authorize precisely `<project>:<unit>-<environment>` for Kargo. Kargo writes Git, then requests synchronization to the commit actually pushed. Application source `targetRevision` remains the configured branch, preserving Git as the source of truth. The chart does not enable Argo automatic synchronization: Kargo requests full syncs after promotions, and configuration-only sync policy is an explicit operational choice for the adopting platform.
+Applications authorize precisely `<project>:<unit>-<environment>` for Kargo. Kargo writes Git, then requests a full synchronization of the configured branch. Every environment tracks that shared branch, so health is Synced and Healthy rather than a match against the pushed commit: pinning the commit would mark every other environment unhealthy after any later commit. Argo CD's branch-resolution cache can make a sync immediately after the push apply the previous commit while the promotion still succeeds; verify the running digest where that matters. The chart does not enable Argo automatic synchronization: Kargo requests full syncs after promotions, and configuration-only sync policy is an explicit operational choice for the adopting platform.
 
 ## Lifecycle and evidence
 
