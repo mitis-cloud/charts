@@ -13,32 +13,33 @@ adopter integration step; schema validation alone does not establish it.
 
 ## Cloud provider profiles
 
-Status: direction, not implemented. No values below are accepted by the current schema.
+Status: decided, not implemented. See [ADR 0001](docs/adr/0001-implement-cloud-capabilities-with-crossplane.md) and [ADR 0002](docs/adr/0002-separate-environment-chart.md). No values below are accepted by the current schema yet.
 
 Today the chart assumes AWS by default (AWS Load Balancer Controller ingress, ACM, Route53 private zones, an `aws-ssm` secret store) and leaves every cloud resource to separate infrastructure tooling. See [Prerequisites and boundary](docs/prerequisites.md#how-cloud-specific-the-charts-are-today).
 
-Direction: keep the service interface cloud-neutral and implement each capability per provider inside Mitis, selected by one platform setting, instead of deferring cloud-specific work to another tool.
-
-```yaml
-platform:
-  provider: aws   # aws | gcp | azure
-```
+Direction: keep the service interface cloud-neutral and implement each capability per provider inside Mitis, as Crossplane Compositions shipped in one Configuration package. The cluster selects the provider by installing only that provider's Compositions; no chart value names a cloud.
 
 | Neutral capability | AWS | GCP | Azure |
 | --- | --- | --- | --- |
 | Public/private HTTP exposure | ALB via AWS Load Balancer Controller | GKE Gateway / Ingress | Application Gateway for Containers |
 | Certificates | ACM | Certificate Manager | Key Vault certificates |
 | DNS | Route53 (public and private zones) | Cloud DNS | Azure DNS |
-| Remote inputs | SSM Parameter Store / Secrets Manager | Secret Manager | Key Vault |
-| Workload identity | IRSA / EKS Pod Identity | GKE Workload Identity | Microsoft Entra Workload ID |
-| Shared filesystem | EFS | Filestore | Azure Files |
+| Remote inputs and service outputs | SSM Parameter Store / Secrets Manager | Secret Manager | Key Vault |
+| Workload identity (deferred until a consumer exists) | EKS Pod Identity | GKE Workload Identity | Microsoft Entra Workload ID |
+| Shared filesystem | EFS storage class | Filestore storage class | Azure Files storage class |
 
-Decisions required before implementation:
+Resolved decisions:
 
-- **Who creates cloud resources.** Options are Kubernetes-native provider operators (AWS Controllers for Kubernetes, Config Connector, Azure Service Operator), a single cross-cloud control plane such as Crossplane, or chart-owned Kubernetes objects only (IngressClassParams, Gateways, SecretStores) with cloud resources still provisioned outside. The first two make the charts depend on another controller per cloud; the last keeps the current boundary.
-- **Ownership and lifecycle.** Durable resources (certificates, DNS zones, filesystems, identities) must survive a Helm uninstall and must not be adopted from another owner implicitly.
-- **Parity scope.** Which capabilities each provider must support before it is offered, and how unsupported combinations fail validation.
-- **Migration.** Existing AWS installations must keep their current rendered resources when `platform.provider: aws` becomes explicit.
+- **Who creates cloud resources.** Crossplane, through Mitis Compositions. Per-cloud operators and chart-owned objects only were rejected.
+- **Ownership and lifecycle.** Mitis owns service- and environment-lifecycle resources. Shared durable platform resources are referenced. Existing resources are adopted by external name, observed first, never recreated.
+- **Parity scope.** AWS first. A provider is offered only when it implements every capability, and unsupported combinations fail validation.
+- **Migration.** Adopting installations import their existing resources. Durable data keeps its backing.
+
+Planned work:
+
+- `environment` chart with namespace, exposure profiles and maintenance switch ([ADR 0002](docs/adr/0002-separate-environment-chart.md)).
+- Service `outputs`: values a service publishes through the secret store, rendered as External Secrets `PushSecret`.
+- Neutral naming for remote input references, which are currently written as `ssm` keys.
 
 Each provider needs its own validated integration evidence. Rendering against schemas does not establish controller behavior.
 

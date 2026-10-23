@@ -1,5 +1,7 @@
 # Prerequisites and boundary
 
+> This page describes the current releases. The boundary is moving: Mitis will implement cloud capabilities itself through Crossplane, with an `environment` chart for environment-wide resources. See [ADR 0001](adr/0001-implement-cloud-capabilities-with-crossplane.md), [ADR 0002](adr/0002-separate-environment-chart.md) and the [roadmap](../ROADMAP.md#cloud-provider-profiles).
+
 Mitis charts are opinionated. Adopting them means adopting a defined platform: a set of controllers, CRDs and infrastructure conventions that must already exist in the cluster and the cloud account. The charts render application resources against that platform. They never install it, configure it or create cloud resources.
 
 Read this page before your first deployment. The [integration guide](integrations.md) goes deeper into each contract.
