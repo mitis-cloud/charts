@@ -1,0 +1,10 @@
+namespace: example
+exposures: [public, private]
+isolation:
+  enabled: true
+  privatePorts: [5432]
+maintenance:
+  enabled: false
+  hostnames: [api.example.invalid]
+  contentType: text/html
+  body: <p>Back soon.</p>

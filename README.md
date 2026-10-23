@@ -39,8 +39,9 @@ These charts are opinionated: adopting them means adopting a defined platform. T
 | --- | --- | --- |
 | [**service**](charts/service/README.md) | A continuous service with its inputs, storage, helpers and jobs, or a resource-only service | `oci://ghcr.io/mitis-cloud/charts/service` |
 | [**delivery**](charts/delivery/README.md) | Argo CD applications and independent Kargo promotion units across explicit environments | `oci://ghcr.io/mitis-cloud/charts/delivery` |
+| [**environment**](charts/environment/README.md) | One environment's namespace, exposure profiles, isolation and maintenance switch, composed by Crossplane | `oci://ghcr.io/mitis-cloud/charts/environment` |
 
-Both charts are public on GHCR, published from tested Git tags through CI, and pull anonymously. Each chart is versioned independently and licensed Apache-2.0.
+The charts are public on GHCR, published from tested Git tags through CI, and pull anonymously. Each chart is versioned independently and licensed Apache-2.0.
 
 ## Quick start
 
@@ -120,7 +121,7 @@ Upstream schemas download into the ignored `.cache/`. No cluster or cloud creden
 ## Release
 
 1. After required checks and review, bump only the affected chart's version.
-2. Tag the tested commit `service-v<version>` or `delivery-v<version>`.
+2. Tag the tested commit `<chart>-v<version>`, or `platform-v<version>` for the Crossplane package `ghcr.io/mitis-cloud/platform:v<version>`.
 3. The tag workflow validates and packages the chart, rejects an existing version, pushes with GitHub Actions' package-scoped token, and pulls back the exact archive.
 
 Never overwrite a released tag or package. A correction needs a new version.

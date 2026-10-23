@@ -1,0 +1,11 @@
+namespace: ''
+exposures: [public, private]
+isolation:
+  enabled: false
+  privatePorts: []
+maintenance:
+  enabled: false
+  hostnames: []
+  status: 503
+  contentType: text/plain
+  body: Service under maintenance.

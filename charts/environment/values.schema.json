@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["namespace"],
+  "properties": {
+    "global": {"type": "object"},
+    "namespace": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", "maxLength": 63, "description": "Application namespace the environment owns; also the environment's name."},
+    "exposures": {"type": "array", "uniqueItems": true, "items": {"enum": ["public", "private"]}, "description": "Exposure profiles services may select with http.exposure."},
+    "isolation": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "enabled": {"type": "boolean", "description": "Restrict outbound traffic to the namespace, cluster DNS, the internet and privatePorts on platform private networks."},
+        "privatePorts": {"type": "array", "uniqueItems": true, "items": {"type": "integer", "minimum": 1, "maximum": 65535}}
+      }
+    },
+    "maintenance": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "hostnames": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "status": {"type": "integer", "minimum": 200, "maximum": 599},
+        "contentType": {"enum": ["text/plain", "text/css", "text/html", "application/javascript", "application/json"]},
+        "body": {"type": "string", "maxLength": 1024}
+      },
+      "if": {"properties": {"enabled": {"const": true}}, "required": ["enabled"]},
+      "then": {"properties": {"hostnames": {"minItems": 1}}}
+    }
+  }
+}

@@ -1,0 +1,16 @@
+apiVersion: mitis.cloud/v1alpha1
+kind: Environment
+metadata:
+  name: example
+spec:
+  namespace: example
+  exposures: [public, private]
+  isolation:
+    enabled: true
+    privatePorts: [5432]
+  maintenance:
+    enabled: true
+    hostnames: [api.example.invalid]
+    status: 503
+    contentType: text/html
+    body: <p>Back soon.</p>

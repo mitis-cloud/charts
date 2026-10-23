@@ -1,0 +1,167 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: environments.aws.mitis.cloud
+  labels:
+    mitis.cloud/provider: aws
+spec:
+  compositeTypeRef:
+    apiVersion: mitis.cloud/v1alpha1
+    kind: Environment
+  mode: Pipeline
+  pipeline:
+    - step: platform
+      functionRef:
+        name: crossplane-contrib-function-environment-configs
+      input:
+        apiVersion: environmentconfigs.fn.crossplane.io/v1beta1
+        kind: Input
+        spec:
+          environmentConfigs:
+            - type: Reference
+              ref:
+                name: mitis-platform
+    - step: render
+      functionRef:
+        name: crossplane-contrib-function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource -}}
+            {{- $spec := $xr.spec -}}
+            {{- $platform := index .context "apiextensions.crossplane.io/environment" -}}
+            {{- $namespace := $spec.namespace -}}
+            ---
+            apiVersion: v1
+            kind: Namespace
+            metadata:
+              name: {{ $namespace }}
+              labels:
+                mitis.cloud/environment: {{ $xr.metadata.name }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: namespace
+                gotemplating.fn.crossplane.io/ready: "True"
+            {{- range $exposure := $spec.exposures }}
+            {{- $profile := index $platform.exposure $exposure }}
+            ---
+            apiVersion: elbv2.k8s.aws/v1beta1
+            kind: IngressClassParams
+            metadata:
+              name: {{ $namespace }}-{{ $exposure }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: {{ $exposure }}-parameters
+                gotemplating.fn.crossplane.io/ready: "True"
+            spec:
+              namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: {{ $namespace }}
+              group:
+                name: {{ $profile.group }}
+              scheme: {{ $profile.scheme }}
+              targetType: ip
+              sslRedirectPort: "443"
+              {{- with $profile.inboundCIDRs }}
+              inboundCIDRs: {{ toJson . }}
+              {{- end }}
+              {{- with $profile.wafAclArn }}
+              wafv2AclArn: {{ . }}
+              {{- end }}
+              {{- with $profile.attributes }}
+              loadBalancerAttributes:
+                {{- range $key, $value := . }}
+                - key: {{ $key }}
+                  value: {{ $value | quote }}
+                {{- end }}
+              {{- end }}
+            ---
+            apiVersion: networking.k8s.io/v1
+            kind: IngressClass
+            metadata:
+              name: {{ $namespace }}-{{ $exposure }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: {{ $exposure }}-class
+                gotemplating.fn.crossplane.io/ready: "True"
+            spec:
+              controller: ingress.k8s.aws/alb
+              parameters:
+                apiGroup: elbv2.k8s.aws
+                kind: IngressClassParams
+                name: {{ $namespace }}-{{ $exposure }}
+            {{- end }}
+            {{- with $spec.isolation }}
+            {{- if .enabled }}
+            ---
+            apiVersion: networking.k8s.io/v1
+            kind: NetworkPolicy
+            metadata:
+              name: environment-isolation
+              namespace: {{ $namespace }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: isolation
+                gotemplating.fn.crossplane.io/ready: "True"
+            spec:
+              podSelector: {}
+              policyTypes: [Egress]
+              egress:
+                - to:
+                    - podSelector: {}
+                - to:
+                    - namespaceSelector:
+                        matchLabels:
+                          kubernetes.io/metadata.name: kube-system
+                      podSelector:
+                        matchLabels:
+                          k8s-app: kube-dns
+                  ports:
+                    - {protocol: UDP, port: 53}
+                    - {protocol: TCP, port: 53}
+                - to:
+                    - ipBlock:
+                        cidr: 0.0.0.0/0
+                        except: [10.0.0.0/8, 100.64.0.0/10, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16]
+                {{- with .privatePorts }}
+                - to:
+                    {{- range $platform.privateNetworks }}
+                    - ipBlock:
+                        cidr: {{ . }}
+                    {{- end }}
+                  ports:
+                    {{- range . }}
+                    - {protocol: TCP, port: {{ . }}}
+                    {{- end }}
+                {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- with $spec.maintenance }}
+            {{- if .enabled }}
+            ---
+            apiVersion: networking.k8s.io/v1
+            kind: Ingress
+            metadata:
+              name: environment-maintenance
+              namespace: {{ $namespace }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: maintenance
+                gotemplating.fn.crossplane.io/ready: "True"
+                alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+                alb.ingress.kubernetes.io/group.order: "-1000"
+                alb.ingress.kubernetes.io/actions.maintenance: {{ dict "Type" "fixed-response" "FixedResponseConfig" (dict "StatusCode" (toString .status) "ContentType" .contentType "MessageBody" .body) | toJson | quote }}
+            spec:
+              ingressClassName: {{ $namespace }}-public
+              rules:
+                {{- range .hostnames }}
+                - host: {{ . | quote }}
+                  http:
+                    paths:
+                      - path: /
+                        pathType: Prefix
+                        backend:
+                          service:
+                            name: maintenance
+                            port: {name: use-annotation}
+                {{- end }}
+            {{- end }}
+            {{- end }}
