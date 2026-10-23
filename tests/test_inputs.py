@@ -176,6 +176,61 @@ class InputContract(unittest.TestCase):
             success=False,
         )
 
+    def test_outputs_are_published_and_read_back(self):
+        docs = render(self.chart, ROOT / "examples/service/outputs.yaml")
+        secret = resource(docs, "Secret", "bootstrap-outputs")
+        self.assertNotIn("data", secret)
+        push = resource(docs, "PushSecret", "bootstrap-outputs")["spec"]
+        self.assertEqual(push["deletionPolicy"], "None")
+        self.assertEqual(push["selector"], {"secret": {"name": "bootstrap-outputs"}})
+        pushed = {
+            item["match"]["secretKey"]: (
+                item["match"]["remoteRef"]["remoteKey"],
+                item["metadata"]["spec"]["secretType"],
+            )
+            for item in push["data"]
+        }
+        self.assertEqual(
+            pushed,
+            {
+                "api-token": ("tenant-bootstrap-api-token", "SecureString"),
+                "org-id": ("tenant-bootstrap-org-id", "String"),
+            },
+        )
+        role = resource(docs, "Role", "bootstrap-role")
+        self.assertIn(
+            {
+                "apiGroups": [""],
+                "resources": ["secrets"],
+                "verbs": ["get", "update", "patch"],
+                "resourceNames": ["bootstrap-outputs"],
+            },
+            role["rules"],
+        )
+        pod = resource(docs, "Job")["spec"]["template"]["spec"]
+        self.assertEqual(pod["serviceAccountName"], "bootstrap")
+        env = {item["name"]: item for item in pod["containers"][0]["env"]}
+        self.assertEqual(
+            env["EXISTING_TOKEN"]["valueFrom"]["secretKeyRef"],
+            {"name": "bootstrap-outputs", "key": "api-token", "optional": True},
+        )
+        self.assertNotIn("ExternalSecret", [d["kind"] for d in docs])
+
+    def test_outputs_fail_closed(self):
+        base = yaml.safe_load((ROOT / "examples/service/outputs.yaml").read_text())
+        undeclared = copy.deepcopy(base)
+        undeclared["jobs"]["setup"]["environment"]["OTHER"] = {"output": "missing"}
+        self.assertIn(
+            "reads undeclared output missing",
+            render(self.chart, undeclared, success=False),
+        )
+        account = copy.deepcopy(base)
+        account["jobs"]["setup"]["account"] = "existing"
+        self.assertIn(
+            "cannot be combined with account",
+            render(self.chart, account, success=False),
+        )
+
     def test_invalid_and_conflicting_inputs_fail_closed(self):
         for value in [
             {"format": "{ssm:key|upper}"},

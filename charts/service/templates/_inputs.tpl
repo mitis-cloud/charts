@@ -166,7 +166,7 @@
 {{- range $id, $c := .containers -}}
 {{- $name := $c.inputSecret | default (printf "%s-secrets" (include "mitis.service.containerName" (dict "root" $root "id" $id))) -}}
 {{- range $key, $value := $c.environment -}}
-{{- if and (ne $value nil) (not (and (kindIs "map" $value) (or (hasKey $value "secret") (hasKey $value "instance")))) -}}
+{{- if and (ne $value nil) (not (and (kindIs "map" $value) (or (hasKey $value "secret") (hasKey $value "instance") (hasKey $value "output")))) -}}
 {{- $input := include "mitis.service.environmentInput" (dict "root" $root "value" $value "generateAll" $generateAll) | fromJson -}}
 {{- if or $input.remotes $generateAll -}}{{ include "mitis.service.addInput" (dict "targets" $secrets "name" ($input.name | default $name) "key" ($input.key | default $key) "body" (printf "{{ %s }}" $input.expression) "remotes" $input.remotes) }}{{- end -}}
 {{- end -}}

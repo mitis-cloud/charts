@@ -49,6 +49,12 @@ env:
       secretKeyRef:
         name: {{ $value.secret.name }}
         key: {{ $value.secret.key }}
+    {{- else if and (kindIs "map" $value) (hasKey $value "output") }}
+    valueFrom:
+      secretKeyRef:
+        name: {{ include "mitis.service.outputsName" $root }}
+        key: {{ $value.output }}
+        optional: true
     {{- else if and (kindIs "map" $value) (hasKey $value "instance") }}
     valueFrom:
       fieldRef:

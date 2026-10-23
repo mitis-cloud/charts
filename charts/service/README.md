@@ -103,6 +103,24 @@ An individual remote-backed input may pin `name` when its existing Secret differ
 
 Helpers declare their inputs explicitly. Consuming a shared external Secret uses `secret`; service-owned generated inputs have one intentional owner. Consumers wait for required keys to exist, not for a guaranteed fresh provider read on every release.
 
+### Outputs
+
+`outputs` (since 0.3.0) declares values the service produces and publishes, such as a token created during bootstrap:
+
+```yaml
+outputs:
+  api-token: {ssm: bootstrap-api-token}
+  org-id: {ssm: bootstrap-org-id, sensitive: false}
+jobs:
+  setup:
+    environment:
+      EXISTING_TOKEN: {output: api-token}
+```
+
+The chart creates an empty `<name>-outputs` Secret and a chart-owned service account allowed to get, update and patch only that Secret. A process writes each key there through the Kubernetes API. An External Secrets `PushSecret` publishes every key to the secret store under the same remote-key rules as inputs, encrypted unless `sensitive: false`. Remote values are never deleted with the service.
+
+`{output: key}` reads a published value back as an optional environment variable: it is unset until first written, which lets a bootstrap step run once and become idempotent. Outputs replace cloud identities whose only purpose was writing to the secret store. They cannot be combined with `account`. The store must allow writes, and remote keys that already exist must be marked as managed by External Secrets. See the [outputs example](../../examples/service/outputs.yaml).
+
 ## Files, storage and helpers
 
 See the [storage guide](../../docs/storage.md) for the complete storage/mount reference.

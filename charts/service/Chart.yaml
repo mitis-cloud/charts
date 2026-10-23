@@ -2,7 +2,7 @@ apiVersion: v2
 name: service
 description: An opinionated service definition with explicit helpers, inputs, storage, and delivery behavior.
 type: application
-version: 0.2.0
+version: 0.3.0
 kubeVersion: '>=1.35.0-0'
 home: https://github.com/mitis-cloud/charts
 sources:

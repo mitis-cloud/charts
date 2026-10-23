@@ -51,6 +51,10 @@
 {{- $containers := include "mitis.service.containers" . | fromJson -}}
 {{- range $id, $c := $containers -}}
 {{- if and $c.account $v.permissions -}}{{ fail "account consumes an existing service account and cannot be combined with chart-owned permissions" }}{{- end -}}
+{{- if and $c.account $v.outputs -}}{{ fail "outputs are written with the chart-owned service account and cannot be combined with account" }}{{- end -}}
+{{- range $key, $value := $c.environment -}}
+{{- if and (kindIs "map" $value) (hasKey $value "output") (not (hasKey ($v.outputs | default dict) $value.output)) -}}{{ fail (printf "environment %s reads undeclared output %s" $key $value.output) }}{{- end -}}
+{{- end -}}
 {{- if and (eq ($c.security | default "image-defaults") "restricted") (hasKey ($c.identity | default dict) "user") (eq (int $c.identity.user) 0) -}}{{ fail "restricted security cannot run as user 0" }}{{- end -}}
 {{- if gt (len $id) 63 -}}{{ fail (printf "container/helper identity %s exceeds 63 characters" $id) }}{{- end -}}
 {{- $image := $v.image -}}{{ if hasKey $c "image" }}{{ $image = $c.image }}{{ end -}}

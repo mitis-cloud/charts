@@ -7,6 +7,9 @@ structured YAML/JSON files, explicit helper sharing and nullable optional jobs.
 Product-owned vendor integrations use native Helm composition and the shared input
 helpers; vendor-specific settings remain outside the reusable chart.
 
+`service:0.3.0` adds service outputs: values a service writes once and publishes to the
+secret store through External Secrets, read back with `{output: key}`.
+
 `delivery:0.1.0` retains the independent Argo CD/Kargo definition. Controller-runtime
 validation for promotion, canary traffic and planned-drain handover remains an
 adopter integration step; schema validation alone does not establish it.
@@ -38,7 +41,6 @@ Resolved decisions:
 Planned work:
 
 - `environment` chart with namespace, exposure profiles and maintenance switch ([ADR 0002](docs/adr/0002-separate-environment-chart.md)).
-- Service `outputs`: values a service publishes through the secret store, rendered as External Secrets `PushSecret`.
 - Neutral naming for remote input references, which are currently written as `ssm` keys.
 
 Each provider needs its own validated integration evidence. Rendering against schemas does not establish controller behavior.

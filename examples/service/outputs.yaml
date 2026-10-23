@@ -1,0 +1,15 @@
+name: bootstrap
+workload: resources
+image: {repository: example.invalid/bootstrap, tag: fixture}
+secretPrefix: tenant-
+outputs:
+  api-token: {ssm: bootstrap-api-token}
+  org-id: {ssm: bootstrap-org-id, sensitive: false}
+jobs:
+  setup:
+    run: after-ready
+    command: [/app/setup]
+    environment:
+      OUTPUTS_SECRET: bootstrap-outputs
+      EXISTING_TOKEN: {output: api-token}
+      EXISTING_ORG_ID: {output: org-id}
