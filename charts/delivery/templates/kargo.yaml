@@ -36,7 +36,7 @@ spec:
     - image:
         repoURL: {{ $image | quote }}
         imageSelectionStrategy: NewestBuild
-        allowTags: {{ $root.Values.discovery.allowTags | quote }}
+        allowTagsRegexes: [{{ $root.Values.discovery.allowTags | quote }}]
         discoveryLimit: {{ $root.Values.discovery.limit }}
     {{- $_ := set $repos $image true }}
     {{- end }}

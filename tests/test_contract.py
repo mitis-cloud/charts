@@ -681,6 +681,17 @@ class DeliveryContract(unittest.TestCase):
             push["config"]["apps"][0]["sources"][0]["desiredRevision"],
         )
 
+    def test_warehouse_uses_supported_tag_selection(self):
+        # Kargo >= 1.11 rejects the deprecated allowTags field at discovery time.
+        docs = render(self.chart, self.example)
+        for warehouse in (d for d in docs if d["kind"] == "Warehouse"):
+            for subscription in warehouse["spec"]["subscriptions"]:
+                self.assertNotIn("allowTags", subscription["image"])
+                self.assertEqual(
+                    [r"^v?[0-9]+\.[0-9]+\.[0-9]+$"],
+                    subscription["image"]["allowTagsRegexes"],
+                )
+
     def test_unknown_references_cycles_and_exclusions(self):
         for invalid in [
             {"environments": {"production": {"upstream": ["missing"]}}},
