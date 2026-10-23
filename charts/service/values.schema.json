@@ -79,6 +79,17 @@
     "init": {"$ref": "#/definitions/containers"},
     "sidecars": {"$ref": "#/definitions/containers"},
     "jobs": {"type": "object", "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {"oneOf": [{"type": "null"}, {"$ref": "#/definitions/job"}]}},
+    "outputs": {
+      "type": "object", "propertyNames": {"pattern": "^[A-Za-z0-9_.-]+$"},
+      "additionalProperties": {
+        "type": "object", "additionalProperties": false, "required": ["ssm"],
+        "properties": {
+          "ssm": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "object", "additionalProperties": false, "required": ["key"], "properties": {"key": {"type": "string", "minLength": 1}, "absolute": {"type": "boolean"}}}]},
+          "sensitive": {"type": "boolean", "description": "Store encrypted; defaults to true."}
+        }
+      },
+      "description": "Values the service writes to its <name>-outputs Secret, published to the secret store. Processes read them back with {output: key}."
+    },
     "permissions": {
       "type": "array", "items": {
         "type": "object", "additionalProperties": false, "required": ["group", "resources", "actions"],
@@ -172,6 +183,7 @@
         {"$ref": "#/definitions/environmentInput"},
         {"type": "object", "additionalProperties": false, "required": ["secret"], "properties": {"secret": {"$ref": "#/definitions/secret"}}},
         {"type": "object", "additionalProperties": false, "required": ["instance"], "properties": {"instance": {"enum": ["name", "namespace", "ip"]}}},
+        {"type": "object", "additionalProperties": false, "required": ["output"], "properties": {"output": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$"}}, "description": "A value this service published through outputs; empty until first written."},
         {"type": "object", "additionalProperties": false, "required": ["url"], "properties": {"url": {
           "type": "object", "additionalProperties": false, "properties": {"hostname": {"type": "string"}, "subdomain": {"type": "string"}, "path": {"$ref": "#/definitions/path"}, "scheme": {"enum": ["http", "https"]}}
         }}},

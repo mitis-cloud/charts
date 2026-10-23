@@ -91,3 +91,11 @@ app.kubernetes.io/instance: {{ include "mitis.service.name" . }}
 argocd.argoproj.io/sync-wave: {{ add (mul 100 .root.Values.render.order) .wave | quote }}
 {{- end -}}
 {{- end -}}
+
+{{- define "mitis.service.outputsName" -}}
+{{- printf "%s-outputs" (include "mitis.service.name" .) -}}
+{{- end -}}
+
+{{- define "mitis.service.ownsAccount" -}}
+{{- if or .Values.permissions .Values.outputs -}}true{{- end -}}
+{{- end -}}

@@ -28,7 +28,55 @@ spec:
       storage: {{ $volume.size | default "1Gi" | quote }}
 {{- end }}
 {{- end }}
-{{- if .Values.permissions }}
+{{- with .Values.outputs }}
+{{- $outputs := include "mitis.service.outputsName" $root }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $outputs }}
+  labels:
+    {{- include "mitis.service.labels" $root | nindent 4 }}
+  annotations:
+    {{- include "mitis.service.wave" (dict "root" $root "wave" -20) | nindent 4 }}
+type: Opaque
+---
+apiVersion: external-secrets.io/v1alpha1
+kind: PushSecret
+metadata:
+  name: {{ $outputs }}
+  labels:
+    {{- include "mitis.service.labels" $root | nindent 4 }}
+  annotations:
+    {{- include "mitis.service.wave" (dict "root" $root "wave" -20) | nindent 4 }}
+spec:
+  refreshInterval: {{ $root.Values.secretRefresh }}
+  updatePolicy: Replace
+  deletionPolicy: None
+  secretStoreRefs:
+    - kind: ClusterSecretStore
+      name: {{ $root.Values.secretStore }}
+  selector:
+    secret:
+      name: {{ $outputs }}
+  data:
+    {{- range $key, $output := . }}
+    {{- $remote := $output.ssm }}
+    {{- if kindIs "string" $remote }}{{ $remote = dict "key" $remote }}{{ end }}
+    {{- $remoteKey := $remote.key }}
+    {{- if not ($remote.absolute | default false) }}{{ $remoteKey = printf "%s%s" ($root.Values.secretPrefix | default "") $remote.key }}{{ end }}
+    - match:
+        secretKey: {{ $key | quote }}
+        remoteRef:
+          remoteKey: {{ $remoteKey | quote }}
+      metadata:
+        apiVersion: kubernetes.external-secrets.io/v1alpha1
+        kind: PushSecretMetadata
+        spec:
+          secretType: {{ ternary "SecureString" "String" (or (not (hasKey $output "sensitive")) $output.sensitive) }}
+    {{- end }}
+{{- end }}
+{{- if include "mitis.service.ownsAccount" . }}
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -44,6 +92,12 @@ metadata:
   annotations:
     {{- include "mitis.service.wave" (dict "root" $root "wave" -20) | nindent 4 }}
 rules:
+  {{- if .Values.outputs }}
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "update", "patch"]
+    resourceNames: [{{ include "mitis.service.outputsName" $root | quote }}]
+  {{- end }}
   {{- range .Values.permissions }}
   - apiGroups: [{{ .group | quote }}]
     resources: {{ toJson .resources }}

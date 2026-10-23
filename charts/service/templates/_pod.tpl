@@ -27,7 +27,7 @@ securityContext:
 {{- end }}
 {{- if $c.account }}
 serviceAccountName: {{ $c.account }}
-{{- else if $root.Values.permissions }}
+{{- else if include "mitis.service.ownsAccount" $root }}
 serviceAccountName: {{ include "mitis.service.name" $root }}
 {{- end }}
 {{- if or (ne $root.Values.placement "any") $root.Values.architecture }}

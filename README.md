@@ -67,7 +67,7 @@ helm template api charts/service -f examples/service/api.yaml
 Or pull a released chart:
 
 ```sh
-helm pull oci://ghcr.io/mitis-cloud/charts/service --version 0.2.0
+helm pull oci://ghcr.io/mitis-cloud/charts/service --version 0.3.0
 helm pull oci://ghcr.io/mitis-cloud/charts/delivery --version 0.1.0
 ```
 
