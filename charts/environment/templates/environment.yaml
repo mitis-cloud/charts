@@ -1,0 +1,19 @@
+{{- if and .Values.maintenance.enabled (not (has "public" .Values.exposures)) -}}
+{{- fail "maintenance answers on the public exposure, which the environment must bind" -}}
+{{- end -}}
+apiVersion: mitis.cloud/v1alpha1
+kind: Environment
+metadata:
+  name: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+  annotations:
+    # Deleting an environment deletes its namespace: removing the release or the Application must not.
+    helm.sh/resource-policy: keep
+    argocd.argoproj.io/sync-options: Delete=false
+spec:
+  namespace: {{ .Values.namespace }}
+  exposures: {{ toJson .Values.exposures }}
+  isolation: {{ toJson .Values.isolation }}
+  maintenance: {{ toJson .Values.maintenance }}

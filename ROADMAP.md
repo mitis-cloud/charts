@@ -16,7 +16,7 @@ adopter integration step; schema validation alone does not establish it.
 
 ## Cloud provider profiles
 
-Status: decided, not implemented. See [ADR 0001](docs/adr/0001-implement-cloud-capabilities-with-crossplane.md) and [ADR 0002](docs/adr/0002-separate-environment-chart.md). No values below are accepted by the current schema yet.
+Status: decided; the environment capability is implemented for AWS. See [ADR 0001](docs/adr/0001-implement-cloud-capabilities-with-crossplane.md) and [ADR 0002](docs/adr/0002-separate-environment-chart.md). No values below are accepted by the current schema yet.
 
 Today the chart assumes AWS by default (AWS Load Balancer Controller ingress, ACM, Route53 private zones, an `aws-ssm` secret store) and leaves every cloud resource to separate infrastructure tooling. See [Prerequisites and boundary](docs/prerequisites.md#how-cloud-specific-the-charts-are-today).
 
@@ -40,7 +40,7 @@ Resolved decisions:
 
 Planned work:
 
-- `environment` chart with namespace, exposure profiles and maintenance switch ([ADR 0002](docs/adr/0002-separate-environment-chart.md)).
+- Remaining capabilities: certificates, DNS and service outputs through compositions. The `environment` chart and its AWS composition (namespace, exposure profiles, isolation, maintenance) are implemented ([environment chart](charts/environment/README.md)).
 - Neutral naming for remote input references, which are currently written as `ssm` keys.
 
 Each provider needs its own validated integration evidence. Rendering against schemas does not establish controller behavior.

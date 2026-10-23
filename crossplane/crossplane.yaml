@@ -1,0 +1,21 @@
+apiVersion: meta.pkg.crossplane.io/v1
+kind: Configuration
+metadata:
+  name: mitis-platform
+  annotations:
+    meta.crossplane.io/maintainer: mitis-cloud
+    meta.crossplane.io/source: github.com/mitis-cloud/charts
+    meta.crossplane.io/license: Apache-2.0
+    meta.crossplane.io/description: Neutral Mitis platform resources and their provider compositions.
+spec:
+  crossplane:
+    version: '>=v2.4.0'
+  dependsOn:
+    - apiVersion: pkg.crossplane.io/v1
+      kind: Function
+      package: xpkg.crossplane.io/crossplane-contrib/function-environment-configs
+      version: '>=v0.9.1'
+    - apiVersion: pkg.crossplane.io/v1
+      kind: Function
+      package: xpkg.crossplane.io/crossplane-contrib/function-go-templating
+      version: '>=v0.13.1'

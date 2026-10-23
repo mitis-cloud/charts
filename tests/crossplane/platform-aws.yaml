@@ -1,0 +1,16 @@
+apiVersion: apiextensions.crossplane.io/v1beta1
+kind: EnvironmentConfig
+metadata:
+  name: mitis-platform
+data:
+  exposure:
+    public:
+      group: example-alb
+      scheme: internet-facing
+      attributes:
+        routing.http.xff_header_processing.mode: remove
+    private:
+      group: example-alb-private
+      scheme: internal
+      inboundCIDRs: [192.0.2.0/24]
+  privateNetworks: [198.51.100.0/24]

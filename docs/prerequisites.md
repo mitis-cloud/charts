@@ -22,7 +22,7 @@ Rules that follow from this:
 
 - **No cloud resources.** The charts never create or modify load balancers, certificates, DNS zones, IAM roles, secret values, filesystems or node pools. Create these with your infrastructure tooling (Terraform, OpenTofu, Pulumi, or a cloud console) before deploying.
 - **No controller lifecycle.** The charts have no Helm dependencies on any controller chart. They don't install, configure or upgrade controllers or CRDs, even when a feature needs one.
-- **Namespace-scoped by design.** The service chart renders no cluster-scoped objects; its permissions are namespace-scoped. The only cluster-scoped object either chart renders is the delivery chart's Kargo `Project`. Cluster-wide grants, IngressClasses, storage classes and secret stores belong to the platform.
+- **Namespace-scoped by design.** The service chart renders no cluster-scoped objects; its permissions are namespace-scoped. The delivery chart's Kargo `Project` and the environment chart's `Environment` are the only cluster-scoped objects the charts render. Cluster-wide grants, IngressClasses, storage classes and secret stores belong to the platform.
 - **Existing names are references.** Values such as `secretStore`, `sharedStorage`, `placement`, `account` and the ingress class naming convention point at objects that must already exist. A wrong name renders fine and fails at runtime.
 
 ## Always required
@@ -66,6 +66,10 @@ The service chart's defaults switch some of these on. A **default** in the "Trig
 - Understudy, if any service delegates capacity through `capacityTargets`.
 
 See the [delivery reference](../charts/delivery/README.md) for activation order.
+
+### Environment chart
+
+`environment` renders one `Environment` composite. It needs Crossplane v2 (tested 2.4.3), the `ghcr.io/mitis-cloud/platform` package, the `mitis-platform` EnvironmentConfig and the RBAC grant described in the [environment reference](../charts/environment/README.md#platform-package). Once installed, it replaces the platform-provided IngressClasses and IngressClassParams for its namespace.
 
 ## How cloud-specific the charts are today
 

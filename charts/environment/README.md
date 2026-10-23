@@ -1,0 +1,81 @@
+# Environment chart
+
+> [!IMPORTANT]
+> This chart renders one Crossplane composite resource. It needs Crossplane v2 and the Mitis platform package, installed and configured as described below.
+
+An environment is one application namespace and everything its services share: the namespace itself, the exposure profiles that `http.exposure` selects, outbound isolation and the maintenance switch. Install one release per environment ([ADR 0002](../../docs/adr/0002-separate-environment-chart.md)). The chart renders a single cluster-scoped `Environment` (`mitis.cloud/v1alpha1`) named after its namespace; the platform package composes it for the cluster's provider ([ADR 0001](../../docs/adr/0001-implement-cloud-capabilities-with-crossplane.md)).
+
+## Values
+
+| Field | Meaning |
+| --- | --- |
+| `namespace` | Required. The application namespace, which the environment owns and is named after. It cannot change. |
+| `exposures` | Profiles services may select: `public`, `private`, or both (default). |
+| `isolation.enabled` | Restrict outbound traffic to the namespace itself, cluster DNS, the internet and `isolation.privatePorts` on platform private networks. Link-local addresses, such as instance metadata, are blocked. Inbound traffic is not restricted. |
+| `isolation.privatePorts` | TCP ports reachable on platform private networks, such as a database port. |
+| `maintenance.enabled` | Answer every request to `maintenance.hostnames` with the fixed response instead of reaching services. Requires the `public` exposure. |
+| `maintenance.hostnames` | Public hostnames to take down. Required while enabled. |
+| `maintenance.status`, `contentType`, `body` | The fixed response: 503, `text/plain` and a short message by default. `body` is limited to 1024 bytes. |
+
+See [the example](../../examples/environment/values.yaml) and [values.schema.json](values.schema.json).
+
+Removing the release or its Argo CD Application leaves the `Environment` in place: deleting it deletes the namespace and every service in it. Delete the `Environment` itself only to retire the environment.
+
+## Platform package
+
+`ghcr.io/mitis-cloud/platform` is a Crossplane Configuration with the `Environment` definition and its provider compositions. It depends on `function-environment-configs` and `function-go-templating`, which Crossplane installs with it. The platform then supplies:
+
+- An `EnvironmentConfig` named `mitis-platform` with the cluster's provider facts. For AWS:
+
+  ```yaml
+  apiVersion: apiextensions.crossplane.io/v1beta1
+  kind: EnvironmentConfig
+  metadata:
+    name: mitis-platform
+  data:
+    exposure:
+      public:
+        group: example-alb            # ALB group
+        scheme: internet-facing
+        attributes: {}                # optional ALB attributes, shared by the whole group
+        wafAclArn: ''                 # optional
+      private:
+        group: example-alb-private
+        scheme: internal
+        inboundCIDRs: [192.0.2.0/24]  # optional
+    privateNetworks: [198.51.100.0/24]
+  ```
+
+- Permission for Crossplane to compose plain Kubernetes objects, through an aggregated ClusterRole. Packages cannot carry RBAC.
+
+  ```yaml
+  apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRole
+  metadata:
+    name: crossplane-mitis-environment
+    labels:
+      rbac.crossplane.io/aggregate-to-crossplane: "true"
+  rules:
+    - apiGroups: [""]
+      resources: [namespaces]
+      verbs: [get, list, watch, create, update, patch, delete]
+    - apiGroups: [networking.k8s.io]
+      resources: [ingressclasses, ingresses, networkpolicies]
+      verbs: [get, list, watch, create, update, patch, delete]
+    - apiGroups: [elbv2.k8s.aws]
+      resources: [ingressclassparams]
+      verbs: [get, list, watch, create, update, patch, delete]
+  ```
+
+On AWS, the composition renders the namespace, an `IngressClassParams` and `IngressClass` named `<namespace>-<exposure>` for each exposure, the isolation `NetworkPolicy` and, while maintenance is enabled, a fixed-response `Ingress` ordered before every service rule. It names no certificate: the AWS Load Balancer Controller discovers ACM certificates from each Ingress's hosts. Isolation needs a CNI that enforces NetworkPolicies, such as the VPC CNI with network policy enabled.
+
+## Adopting existing resources
+
+Crossplane takes over an existing object only when it already carries the annotation `crossplane.io/composition-resource-name` with the composition's name for it. Before creating an `Environment` over a namespace that exists, annotate each object it will compose:
+
+| Object | Annotation value |
+| --- | --- |
+| Namespace `<namespace>` | `namespace` |
+| IngressClassParams and IngressClass `<namespace>-<exposure>` | `<exposure>-parameters` and `<exposure>-class` |
+
+Then stop the previous owner from managing them without deleting them.

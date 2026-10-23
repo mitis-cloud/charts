@@ -1,0 +1,86 @@
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: environments.mitis.cloud
+spec:
+  group: mitis.cloud
+  names:
+    kind: Environment
+    plural: environments
+  scope: Cluster
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              description: A deployment environment and the cluster-scoped resources its services share.
+              required: [namespace]
+              x-kubernetes-validations:
+                - rule: '!has(self.maintenance) || !self.maintenance.enabled || ''public'' in self.exposures'
+                  message: Maintenance answers on the public exposure, which the environment must bind.
+              properties:
+                namespace:
+                  type: string
+                  description: Application namespace the environment owns.
+                  maxLength: 63
+                  pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'
+                  x-kubernetes-validations:
+                    - rule: self == oldSelf
+                      message: An environment cannot move to another namespace.
+                exposures:
+                  type: array
+                  description: Exposure profiles services in the namespace may select with http.exposure.
+                  default: [public, private]
+                  items:
+                    type: string
+                    enum: [public, private]
+                  x-kubernetes-list-type: set
+                isolation:
+                  type: object
+                  description: Restricts outbound traffic to the namespace itself, cluster DNS, the internet and the listed ports on platform private networks.
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    privatePorts:
+                      type: array
+                      description: TCP ports reachable on platform private networks, such as a database.
+                      items:
+                        type: integer
+                        minimum: 1
+                        maximum: 65535
+                      x-kubernetes-list-type: set
+                maintenance:
+                  type: object
+                  description: While enabled, the listed public hostnames answer with a fixed response instead of reaching services.
+                  x-kubernetes-validations:
+                    - rule: '!self.enabled || size(self.hostnames) > 0'
+                      message: Maintenance needs at least one hostname.
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    hostnames:
+                      type: array
+                      items:
+                        type: string
+                        minLength: 1
+                      x-kubernetes-list-type: set
+                    status:
+                      type: integer
+                      default: 503
+                      minimum: 200
+                      maximum: 599
+                    contentType:
+                      type: string
+                      default: text/plain
+                      enum: [text/plain, text/css, text/html, application/javascript, application/json]
+                    body:
+                      type: string
+                      default: Service under maintenance.
+                      maxLength: 1024
