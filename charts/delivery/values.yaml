@@ -10,6 +10,10 @@ charts:
     repository: ghcr.io/mitis-cloud/charts
     name: service
     serviceScopes: ['']
+  environment:
+    repository: ghcr.io/mitis-cloud/charts
+    name: environment
+    serviceScopes: []
 environments: {}
 releaseUnits: {}
 discovery:

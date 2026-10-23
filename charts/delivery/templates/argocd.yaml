@@ -22,28 +22,25 @@ spec:
             namespace: {{ $env.namespace }}
             routing: {{ $env.routing | default "gateway" }}
             charts: {{ toJson $env.charts }}
+            layers: {{ toJson ($env.layers | default list) }}
           {{- end }}
           {{- end }}
-  template:
-    metadata:
-      name: '{{ $root.Values.project }}-{{ $unitName }}-{{ "{{ .environment }}" }}'
-      annotations:
-        kargo.akuity.io/authorized-stage: '{{ $root.Values.project }}:{{ $unitName }}-{{ "{{ .environment }}" }}'
+  # Sources live in the patch: each environment inserts its own layers between the service and its overrides.
+  templatePatch: |
     spec:
-      project: '{{ $root.Values.project }}-{{ "{{ .environment }}" }}'
-      destination:
-        name: '{{ "{{ .cluster }}" }}'
-        namespace: '{{ "{{ .namespace }}" }}'
       sources:
         {{- range $serviceName, $service := $unit.services }}
         {{- $chart := index $root.Values.charts $service.chart }}
         - repoURL: {{ $chart.repository | quote }}
           chart: {{ $chart.name }}
-          targetRevision: {{ printf "{{ index .charts %q }}" $service.chart | quote }}
+          targetRevision: '{{ printf "{{ index .charts %q }}" $service.chart }}'
           helm:
             releaseName: {{ $service.releaseName | default $serviceName }}
             valueFiles:
               - $values/{{ $root.Values.git.services }}/{{ $serviceName }}.yaml
+              {{ "{{- range .layers }}" }}
+              - $values/{{ "{{ . }}" }}
+              {{ "{{- end }}" }}
               - $values/{{ $root.Values.git.environments }}/{{ "{{ .environment }}" }}/defaults.yaml
               - $values/{{ $root.Values.git.environments }}/{{ "{{ .environment }}" }}/{{ $serviceName }}.yaml
             ignoreMissingValueFiles: false
@@ -65,6 +62,16 @@ spec:
         - repoURL: {{ $root.Values.git.repository | quote }}
           targetRevision: {{ $root.Values.git.revision | quote }}
           ref: values
+  template:
+    metadata:
+      name: '{{ $root.Values.project }}-{{ $unitName }}-{{ "{{ .environment }}" }}'
+      annotations:
+        kargo.akuity.io/authorized-stage: '{{ $root.Values.project }}:{{ $unitName }}-{{ "{{ .environment }}" }}'
+    spec:
+      project: '{{ $root.Values.project }}-{{ "{{ .environment }}" }}'
+      destination:
+        name: '{{ "{{ .cluster }}" }}'
+        namespace: '{{ "{{ .namespace }}" }}'
       syncPolicy:
         syncOptions: [RespectIgnoreDifferences=true]
         retry:
@@ -107,13 +114,44 @@ metadata:
 spec:
   sourceRepos:
     - {{ $root.Values.git.repository | quote }}
-    {{- range $chart := $root.Values.charts }}
-    - {{ $chart.repository | quote }}
+    {{- $repositories := list }}
+    {{- range $chart := $root.Values.charts }}{{ $repositories = append $repositories $chart.repository }}{{ end }}
+    {{- range $repository := $repositories | uniq | sortAlpha }}
+    - {{ $repository | quote }}
     {{- end }}
   destinations:
     - name: {{ $env.cluster | quote }}
       namespace: {{ $env.namespace }}
   namespaceResourceWhitelist:
     - {group: '*', kind: '*'}
+  {{- if hasKey $env "environment" }}
+  clusterResourceWhitelist:
+    - {group: mitis.cloud, kind: Environment}
+  {{- else }}
   clusterResourceWhitelist: []
+  {{- end }}
+{{- with $env.environment }}
+{{- $chart := index $root.Values.charts "environment" }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ $root.Values.project }}-{{ $envName }}-environment
+  namespace: {{ $root.Values.argoNamespace }}
+spec:
+  project: {{ $root.Values.project }}-{{ $envName }}
+  destination:
+    name: {{ $env.cluster | quote }}
+    namespace: {{ $env.namespace }}
+  source:
+    repoURL: {{ $chart.repository | quote }}
+    chart: {{ $chart.name }}
+    targetRevision: {{ index $env.charts "environment" | quote }}
+    helm:
+      releaseName: environment
+      valuesObject: {{ toJson (merge (dict "namespace" $env.namespace) .) }}
+  # Configuration, not a promoted release: Git changes such as maintenance apply directly.
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+{{- end }}
 {{- end }}
