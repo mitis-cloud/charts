@@ -8,3 +8,19 @@ maintenance:
   hostnames: [api.example.invalid]
   contentType: text/html
   body: <p>Back soon.</p>
+secrets:
+  store: aws-ssm
+  prefix: example-
+  generated:
+    nats-password: {type: password}
+    mcp-api-key: {type: string, length: 32}
+    nats-username: {type: username}
+    openai-api-key: {type: manual}
+databases:
+  backend:
+    extensions: [pg_trgm]
+    schemas:
+      public: {operator: full, reader: read-execute}
+    accounts:
+      migrator: admin
+      api: operator

@@ -23,6 +23,8 @@ spec:
               x-kubernetes-validations:
                 - rule: '!has(self.maintenance) || !self.maintenance.enabled || ''public'' in self.exposures'
                   message: Maintenance answers on the public exposure, which the environment must bind.
+                - rule: '(!has(self.databases) || size(self.databases) == 0) || has(self.secrets)'
+                  message: Databases keep their credentials in the environment's secret store.
               properties:
                 namespace:
                   type: string
@@ -55,6 +57,56 @@ spec:
                         minimum: 1
                         maximum: 65535
                       x-kubernetes-list-type: set
+                secrets:
+                  type: object
+                  description: The secret store holding the environment's values, and the values generated for it. A value is generated and published only when its remote key does not exist yet.
+                  required: [store, prefix]
+                  properties:
+                    store:
+                      type: string
+                      description: ClusterSecretStore holding the values.
+                    prefix:
+                      type: string
+                      description: Remote key prefix for every value of the environment.
+                    generated:
+                      type: object
+                      description: Values by remote key suffix.
+                      additionalProperties:
+                        type: object
+                        required: [type]
+                        x-kubernetes-validations:
+                          - rule: self.type != 'string' || has(self.length)
+                            message: A string needs a length.
+                          - rule: self.type != 'value' || has(self.value)
+                            message: A value needs its content.
+                        properties:
+                          type:
+                            type: string
+                            description: password (with symbols), string (letters and digits), username (lowercase letters), manual (a placeholder a person replaces), or value (fixed content).
+                            enum: [password, string, username, manual, value]
+                          length:
+                            type: integer
+                            minimum: 8
+                            maximum: 128
+                          value:
+                            type: string
+                databases:
+                  type: object
+                  description: PostgreSQL databases on the platform's shared instance, named <namespace>-<key>. Account credentials are kept under <prefix>pgsql-<key>-<account>-password and -url.
+                  additionalProperties:
+                    type: object
+                    properties:
+                      extensions:
+                        type: array
+                        items: {type: string}
+                      schemas:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      accounts:
+                        type: object
+                        additionalProperties:
+                          type: string
+                          enum: [admin, operator, reader]
                 maintenance:
                   type: object
                   description: While enabled, the listed public hostnames answer with a fixed response instead of reaching services.

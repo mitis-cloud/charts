@@ -17,13 +17,17 @@ An environment is one application namespace and everything its services share: t
 | `maintenance.hostnames` | Public hostnames to take down. Required while enabled. |
 | `maintenance.status`, `contentType`, `body` | The fixed response: 503, `text/plain` and a short message by default. `body` is limited to 1024 bytes. |
 
+| `secrets.store`, `secrets.prefix` | The ClusterSecretStore holding the environment's values and their remote key prefix. Required with `databases`. |
+| `secrets.generated` | Values by remote key suffix: `password` (default 32 characters with symbols), `string` (letters and digits, `length` required), `username` (lowercase letters), `manual` (a `-` placeholder a person replaces) or `value` (fixed content). Each is generated and published only when its remote key does not exist, so existing values are kept. |
+| `databases.<key>` | A PostgreSQL database `<namespace>-<key>` on the platform's shared instance: `extensions`, `schemas` (per schema `operator` and `reader` access: `full`, `read`, `read-execute` or `none`; `existingFunctions`, `adminMaintain`) and `accounts` (name to `admin`, `operator` or `reader` group). |
+
 See [the example](../../examples/environment/values.yaml) and [values.schema.json](values.schema.json).
 
 Removing the release or its Argo CD Application leaves the `Environment` in place: deleting it deletes the namespace and every service in it. Delete the `Environment` itself only to retire the environment.
 
 ## Platform package
 
-`ghcr.io/mitis-cloud/platform` is a Crossplane Configuration with the `Environment` definition and its provider compositions. It depends on `function-environment-configs` and `function-go-templating`, which Crossplane installs with it. The platform then supplies:
+`ghcr.io/mitis-cloud/platform` is a Crossplane Configuration with the `Environment` definition and its provider compositions. It depends on `function-environment-configs`, `function-go-templating`, `function-auto-ready` and `provider-sql`, which Crossplane installs with it. The platform then supplies:
 
 - An `EnvironmentConfig` named `mitis-platform` with the cluster's provider facts. For AWS:
 
@@ -44,9 +48,13 @@ Removing the release or its Argo CD Application leaves the `Environment` in plac
         scheme: internal
         inboundCIDRs: [192.0.2.0/24]  # optional
     privateNetworks: [198.51.100.0/24]
+    postgres:                         # shared PostgreSQL instance, needed for databases
+      providerConfig: postgres        # provider-sql ClusterProviderConfig with superuser access
+      host: postgres.example.internal
+      port: 5432
   ```
 
-- Permission for Crossplane to compose plain Kubernetes objects, through an aggregated ClusterRole. Packages cannot carry RBAC.
+- Permission for Crossplane to compose plain Kubernetes and External Secrets objects, through an aggregated ClusterRole. Packages cannot carry RBAC.
 
   ```yaml
   apiVersion: rbac.authorization.k8s.io/v1
@@ -57,7 +65,7 @@ Removing the release or its Argo CD Application leaves the `Environment` in plac
       rbac.crossplane.io/aggregate-to-crossplane: "true"
   rules:
     - apiGroups: [""]
-      resources: [namespaces]
+      resources: [namespaces, secrets]
       verbs: [get, list, watch, create, update, patch, delete]
     - apiGroups: [networking.k8s.io]
       resources: [ingressclasses, ingresses, networkpolicies]
@@ -65,9 +73,19 @@ Removing the release or its Argo CD Application leaves the `Environment` in plac
     - apiGroups: [elbv2.k8s.aws]
       resources: [ingressclassparams]
       verbs: [get, list, watch, create, update, patch, delete]
+    - apiGroups: [external-secrets.io]
+      resources: [externalsecrets, pushsecrets]
+      verbs: [get, list, watch, create, update, patch, delete]
+    - apiGroups: [generators.external-secrets.io]
+      resources: [passwords]
+      verbs: [get, list, watch, create, update, patch, delete]
   ```
 
+- For databases, a provider-sql `ClusterProviderConfig` with superuser access to the instance, and a secret store that External Secrets can write (PushSecret).
+
 On AWS, the composition renders the namespace, an `IngressClassParams` and `IngressClass` named `<namespace>-<exposure>` for each exposure, the isolation `NetworkPolicy` and, while maintenance is enabled, a fixed-response `Ingress` ordered before every service rule. It names no certificate: the AWS Load Balancer Controller discovers ACM certificates from each Ingress's hosts. Isolation needs a CNI that enforces NetworkPolicies, such as the VPC CNI with network policy enabled.
+
+Each database gets `admin`, `operator` and `reader` group roles and login roles `<database>-<account>`. Admin accounts act as the admin group, which owns the database, its schemas and whatever they create; default privileges extend each group's access to future objects. Account passwords come from `<prefix>pgsql-<key>-<account>-password` (with a matching `-url`), generated only when absent, and land in a Secret `<database>-<account>` (`username`, `password`, `url`) in the namespace. Databases, schemas and extensions are never dropped by Crossplane.
 
 ## Adopting existing resources
 
@@ -78,4 +96,4 @@ Crossplane takes over an existing object only when it already carries the annota
 | Namespace `<namespace>` | `namespace` |
 | IngressClassParams and IngressClass `<namespace>-<exposure>` | `<exposure>-parameters` and `<exposure>-class` |
 
-Then stop the previous owner from managing them without deleting them.
+Databases, roles and grants are adopted by name with no annotation: existing passwords stay, because they are read from the existing remote keys. Then stop the previous owner from managing them without deleting them.

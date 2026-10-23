@@ -125,6 +125,25 @@ class AwsEnvironmentComposition(unittest.TestCase):
         self.assertEqual(action["FixedResponseConfig"]["MessageBody"], "<p>Back soon.</p>")
         self.assertNotIn("external-dns.alpha.kubernetes.io/hostname", ingress["metadata"]["annotations"])
 
+    def test_databases_and_generated_values_keep_existing_remote_values(self):
+        docs = self.composed()
+        database = resource(docs, "Database", "backend")
+        self.assertEqual(database["metadata"]["namespace"], "example")
+        self.assertEqual(database["spec"]["name"], "example-backend")
+        self.assertEqual(database["spec"]["secrets"], {"store": "aws-ssm", "key": "example-pgsql-backend"})
+        pushes = {d["metadata"]["name"]: d for d in docs if d["kind"] == "PushSecret"}
+        for key in ["nats-password", "mcp-api-key", "nats-username", "openai-api-key"]:
+            push = pushes[f"generated-{key}"]
+            self.assertEqual(push["spec"]["updatePolicy"], "IfNotExists")
+            self.assertEqual(push["spec"]["data"][0]["match"]["remoteRef"]["remoteKey"], f"example-{key}")
+        generators = {d["metadata"]["name"]: d["spec"] for d in docs if d["kind"] == "Password"}
+        self.assertEqual(generators["generated-mcp-api-key"]["symbols"], 0)
+        self.assertEqual(generators["generated-mcp-api-key"]["length"], 32)
+        self.assertTrue(generators["generated-nats-username"]["noUpper"])
+        self.assertIn("symbolCharacters", generators["generated-nats-password"])
+        manual = resource(docs, "Secret", "generated-openai-api-key")
+        self.assertEqual(manual["stringData"], {"value": "-"})
+
     def test_package_builds(self):
         with tempfile.TemporaryDirectory() as directory:
             subprocess.run(
@@ -137,6 +156,63 @@ class AwsEnvironmentComposition(unittest.TestCase):
                 check=True,
                 capture_output=True,
             )
+
+
+
+class PostgresDatabaseComposition(unittest.TestCase):
+    composition = CROSSPLANE / "database/postgres.yaml"
+
+    def composed(self):
+        xr = yaml.safe_load((ROOT / "examples/crossplane/database.yaml").read_text())
+        return compose(xr, self.composition)
+
+    def by_name(self, docs):
+        return {d["metadata"]["name"]: d for d in docs}
+
+    def test_durable_objects_are_never_dropped(self):
+        for doc in self.composed():
+            if doc["kind"] in ["Database", "Schema", "Extension"]:
+                self.assertNotIn("Delete", doc["spec"]["managementPolicies"])
+            elif doc["apiVersion"].startswith("postgresql."):
+                self.assertNotIn("managementPolicies", doc["spec"])
+
+    def test_groups_accounts_and_ownership(self):
+        docs = self.by_name(self.composed())
+        migrator = docs["example-backend-account-migrator"]["spec"]["forProvider"]
+        self.assertEqual(migrator["configurationParameters"], [{"name": "role", "value": "example-backend-group-admin"}])
+        api = docs["example-backend-account-api"]["spec"]["forProvider"]
+        self.assertNotIn("configurationParameters", api)
+        self.assertEqual(api["passwordSecretRef"], {"name": "example-backend-api", "key": "password"})
+        self.assertEqual(
+            docs["example-backend-account-api-membership"]["spec"]["forProvider"]["memberOf"],
+            "example-backend-group-operator",
+        )
+        self.assertEqual(docs["example-backend-database"]["spec"]["forProvider"]["owner"], "example-backend-group-admin")
+        self.assertTrue(docs["example-backend-database-admin"]["spec"]["forProvider"]["revokePublicOnDb"])
+        self.assertIn("MAINTAIN", docs["example-backend-public-admin-table"]["spec"]["forProvider"]["privileges"])
+        self.assertNotIn("MAINTAIN", docs["example-backend-reporting-admin-table"]["spec"]["forProvider"]["privileges"])
+        self.assertEqual(docs["example-backend-reporting-operator-table"]["spec"]["forProvider"]["privileges"], ["SELECT"])
+        self.assertNotIn("example-backend-reporting-operator-function", docs)
+        targets = {
+            d["spec"]["forProvider"]["targetRole"]
+            for d in docs.values()
+            if d["kind"] == "DefaultPrivileges"
+        }
+        self.assertEqual(targets, {"example-backend-group-admin", "example-backend-migrator"})
+        self.assertNotIn("example-backend-schema-public", docs)
+
+    def test_passwords_are_published_only_when_absent(self):
+        docs = self.by_name(self.composed())
+
+        pushes = [d for d in docs.values() if d["kind"] == "PushSecret"]
+        self.assertEqual(len(pushes), 2)
+        for push in pushes:
+            self.assertEqual(push["spec"]["updatePolicy"], "IfNotExists")
+            keys = [d["match"]["remoteRef"]["remoteKey"] for d in push["spec"]["data"]]
+            account = push["metadata"]["name"].removeprefix("example-backend-")
+            self.assertEqual(keys, [f"example-pgsql-backend-{account}-password", f"example-pgsql-backend-{account}-url"])
+        generated = [d for d in docs.values() if d["kind"] == "ExternalSecret" and d["metadata"]["name"].endswith("-generated")]
+        self.assertTrue(all(d["spec"]["refreshPolicy"] == "CreatedOnce" for d in generated))
 
 
 if __name__ == "__main__":

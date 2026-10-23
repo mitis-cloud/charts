@@ -17,3 +17,9 @@ spec:
   exposures: {{ toJson .Values.exposures }}
   isolation: {{ toJson .Values.isolation }}
   maintenance: {{ toJson .Values.maintenance }}
+  {{- with .Values.secrets }}
+  secrets: {{ toJson . }}
+  {{- end }}
+  {{- with .Values.databases }}
+  databases: {{ toJson . }}
+  {{- end }}
