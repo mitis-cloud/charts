@@ -669,8 +669,7 @@ class DeliveryContract(unittest.TestCase):
             self.assertEqual(
                 1, len(stage["spec"]["promotionTemplate"]["spec"]["steps"])
             )
-        worker = resource(docs, "ApplicationSet", "example-worker")
-        ignores = worker["spec"]["template"]["spec"]["ignoreDifferences"]
+        ignores = self.expanded_spec(docs, "worker", "production")["ignoreDifferences"]
         self.assertFalse(
             any("/spec/replicas" in rule.get("jsonPointers", []) for rule in ignores)
         )
@@ -710,6 +709,31 @@ class DeliveryContract(unittest.TestCase):
             {"environments": {"production": {"units": ["backend"]}}},
         )
         self.assertEqual(3, sum(d["kind"] == "Stage" for d in docs))
+
+    def expanded_spec(self, docs, unit, environment):
+        appset = resource(docs, "ApplicationSet", f"example-{unit}")
+        element = next(
+            e for e in appset["spec"]["generators"][0]["list"]["elements"]
+            if e["environment"] == environment
+        )
+        result = subprocess.run(
+            ["go", "run", str(ROOT / "tests/expand_templates.go")],
+            input=json.dumps({"template": {"patch": appset["spec"]["templatePatch"]}, "elements": [element]}),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        return yaml.safe_load(json.loads(result.stdout)[0]["patch"])["spec"]
+
+    def test_externally_scaled_environments_ignore_replicas(self):
+        docs = render(self.chart, self.example)
+        replicas = lambda spec: [r for r in spec["ignoreDifferences"] if r.get("jsonPointers") == ["/spec/replicas"] and "name" not in r]
+        test = self.expanded_spec(docs, "backend", "test")
+        self.assertEqual({r["kind"] for r in replicas(test)}, {"Deployment", "StatefulSet", "Rollout"})
+        self.assertTrue(any(r.get("name") == "api" for r in test["ignoreDifferences"]))
+        self.assertFalse(replicas(self.expanded_spec(docs, "backend", "production")))
+        project = resource(docs, "AppProject", "example-test")
+        self.assertEqual(project["metadata"]["annotations"]["argocd.argoproj.io/sync-wave"], "-10")
 
     def expanded_sources(self, docs, unit, environment):
         appset = resource(docs, "ApplicationSet", f"example-{unit}")
