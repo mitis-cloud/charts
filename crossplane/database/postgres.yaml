@@ -43,7 +43,7 @@ spec:
                 "none" $none }}
             {{- $adminTable := list "INSERT" "SELECT" "UPDATE" "DELETE" "TRUNCATE" "REFERENCES" "TRIGGER" }}
             {{- $adminAccess := dict "schema" (list "USAGE" "CREATE") "table" $adminTable "sequence" (list "USAGE" "SELECT" "UPDATE") "function" (list "EXECUTE") }}
-            {{- /* Durable objects are never dropped by Crossplane: removing them is a deliberate operation. */}}
+            {{- /* Nothing is dropped or revoked by Crossplane: the database outlives its composite, and its roles own it. */}}
             {{- $keep := list "Observe" "Create" "Update" "LateInitialize" }}
             {{- $mrs := list }}
 
@@ -52,9 +52,9 @@ spec:
             {{- end }}
             {{- /* A managed instance's admin is not a superuser: owning objects on the group's behalf needs membership. */}}
             {{- $mrs = append $mrs (dict "kind" "Grant" "id" "provider-membership" "forProvider" (dict "role" $pg.adminRole "memberOf" $groups.admin)) }}
-            {{- $mrs = append $mrs (dict "kind" "Database" "id" "database" "external" $db "keep" true "forProvider" (dict "owner" $groups.admin "lcCollate" "C" "lcCType" "C" "template" "template0" "connectionLimit" -1 "allowConnections" true)) }}
+            {{- $mrs = append $mrs (dict "kind" "Database" "id" "database" "external" $db "forProvider" (dict "owner" $groups.admin "lcCollate" "C" "lcCType" "C" "template" "template0" "connectionLimit" -1 "allowConnections" true)) }}
             {{- range $extension := $spec.extensions }}
-            {{- $mrs = append $mrs (dict "kind" "Extension" "id" (printf "extension-%s" $extension) "keep" true "forProvider" (dict "database" $db "extension" $extension)) }}
+            {{- $mrs = append $mrs (dict "kind" "Extension" "id" (printf "extension-%s" $extension) "forProvider" (dict "database" $db "extension" $extension)) }}
             {{- end }}
 
             {{- $mrs = append $mrs (dict "kind" "Grant" "id" "database-admin" "forProvider" (dict "database" $db "role" $groups.admin "privileges" (list "CONNECT" "CREATE" "TEMPORARY") "revokePublicOnDb" true)) }}
@@ -73,7 +73,7 @@ spec:
             {{- range $schema, $cfg := $schemas }}
             {{- /* PUBLIC cannot connect (revokePublicOnDb), so no schema-level revoke is needed. */}}
             {{- if ne $schema "public" }}
-            {{- $mrs = append $mrs (dict "kind" "Schema" "id" (printf "schema-%s" $schema) "external" $schema "keep" true "forProvider" (dict "database" $db "role" $groups.admin)) }}
+            {{- $mrs = append $mrs (dict "kind" "Schema" "id" (printf "schema-%s" $schema) "external" $schema "forProvider" (dict "database" $db "role" $groups.admin)) }}
             {{- end }}
             {{- $functions := ternary true $cfg.existingFunctions (not (hasKey $cfg "existingFunctions")) }}
             {{- $levels := dict "admin" $adminAccess "operator" (index $access $cfg.operator) "reader" (index $access $cfg.reader) }}
@@ -207,9 +207,7 @@ spec:
                 crossplane.io/external-name: {{ . }}
                 {{- end }}
             spec:
-              {{- if $mr.keep }}
               managementPolicies: {{ toJson $keep }}
-              {{- end }}
               providerConfigRef:
                 kind: ClusterProviderConfig
                 name: {{ $pg.providerConfig }}

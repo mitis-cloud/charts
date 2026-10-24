@@ -170,11 +170,10 @@ class PostgresDatabaseComposition(unittest.TestCase):
         return {d["metadata"]["name"]: d for d in docs}
 
     def test_durable_objects_are_never_dropped(self):
+        # Revoking in teardown order is impossible once memberships go, and dropped roles would orphan the database.
         for doc in self.composed():
-            if doc["kind"] in ["Database", "Schema", "Extension"]:
+            if doc["apiVersion"].startswith("postgresql."):
                 self.assertNotIn("Delete", doc["spec"]["managementPolicies"])
-            elif doc["apiVersion"].startswith("postgresql."):
-                self.assertNotIn("managementPolicies", doc["spec"])
 
     def test_groups_accounts_and_ownership(self):
         docs = self.by_name(self.composed())
