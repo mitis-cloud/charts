@@ -1,0 +1,10 @@
+apiVersion: mitis.cloud/v1alpha1
+kind: Webapp
+metadata:
+  name: portal
+  namespace: example
+spec:
+  hostname: portal.app.example.invalid
+  outputs:
+    store: aws-ssm
+    key: example-portal

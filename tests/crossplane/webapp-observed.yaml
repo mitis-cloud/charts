@@ -1,0 +1,63 @@
+apiVersion: cloudfront.aws.m.upbound.io/v1beta1
+kind: OriginAccessIdentity
+metadata:
+  name: portal-identity
+  namespace: example
+  annotations:
+    crossplane.io/composition-resource-name: identity
+    crossplane.io/external-name: E2EXAMPLEOAI
+status:
+  atProvider:
+    cloudfrontAccessIdentityPath: origin-access-identity/cloudfront/E2EXAMPLEOAI
+    iamArn: arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity E2EXAMPLEOAI
+---
+apiVersion: cloudfront.aws.m.upbound.io/v1beta1
+kind: Function
+metadata:
+  name: portal-function
+  namespace: example
+  annotations:
+    crossplane.io/composition-resource-name: function
+    crossplane.io/external-name: legacy-portal-function
+status:
+  atProvider:
+    arn: arn:aws:cloudfront::000000000000:function/legacy-portal-function
+---
+apiVersion: acm.aws.m.upbound.io/v1beta1
+kind: Certificate
+metadata:
+  name: portal-certificate
+  namespace: example
+  annotations:
+    crossplane.io/composition-resource-name: certificate
+    crossplane.io/external-name: arn:aws:acm:us-east-1:000000000000:certificate/example
+status:
+  atProvider:
+    arn: arn:aws:acm:us-east-1:000000000000:certificate/example
+    domainValidationOptions:
+      - domainName: portal.app.example.invalid
+        resourceRecordName: _abc.portal.app.example.invalid.
+        resourceRecordType: CNAME
+        resourceRecordValue: _def.acm-validations.aws.
+---
+apiVersion: cloudfront.aws.m.upbound.io/v1beta1
+kind: Distribution
+metadata:
+  name: portal-distribution
+  namespace: example
+  annotations:
+    crossplane.io/composition-resource-name: distribution
+    crossplane.io/external-name: E1EXAMPLEDIST
+status:
+  atProvider:
+    id: E1EXAMPLEDIST
+    domainName: d111111abcdef8.cloudfront.net
+---
+apiVersion: s3.aws.m.upbound.io/v1beta1
+kind: Bucket
+metadata:
+  name: portal-logs-bucket
+  namespace: example
+  annotations:
+    crossplane.io/composition-resource-name: logs-bucket
+    crossplane.io/external-name: legacy-portal-logs-abc123

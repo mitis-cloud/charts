@@ -159,6 +159,27 @@ spec:
                 store: {{ $spec.secrets.store }}
                 key: {{ $spec.secrets.prefix }}pgsql-{{ $name }}
             {{- end }}
+            {{- range $name, $webapp := $spec.webapps }}
+            ---
+            apiVersion: mitis.cloud/v1alpha1
+            kind: Webapp
+            metadata:
+              name: {{ $name }}
+              namespace: {{ $namespace }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: webapp-{{ $name }}
+            spec:
+              hostname: {{ $webapp.hostname }}
+              {{- with $webapp.cachedPaths }}
+              cachedPaths: {{ toJson . }}
+              {{- end }}
+              maintenance:
+                enabled: {{ dig "maintenance" "enabled" false $spec }}
+                body: {{ dig "maintenance" "body" "Service under maintenance." $spec | toJson }}
+              outputs:
+                store: {{ $spec.secrets.store }}
+                key: {{ $spec.secrets.prefix }}{{ $name }}
+            {{- end }}
             {{- with $spec.secrets }}
             {{- $store := .store }}
             {{- $prefix := .prefix }}

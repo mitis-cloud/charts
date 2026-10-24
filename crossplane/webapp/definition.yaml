@@ -1,0 +1,47 @@
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: webapps.mitis.cloud
+spec:
+  group: mitis.cloud
+  names:
+    kind: Webapp
+    plural: webapps
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              description: A static single-page web application served over HTTPS from object storage through a CDN. Its build is uploaded separately.
+              required: [hostname, outputs]
+              properties:
+                hostname:
+                  type: string
+                  description: Public hostname, inside a DNS zone the platform manages.
+                  x-kubernetes-validations:
+                    - rule: self == oldSelf
+                      message: A webapp cannot change hostname.
+                cachedPaths:
+                  type: array
+                  description: Path patterns served with long-lived caching; everything else is never cached.
+                  default: ["/assets/*"]
+                  items: {type: string}
+                maintenance:
+                  type: object
+                  description: While enabled, every request answers 503 with the body.
+                  properties:
+                    enabled: {type: boolean, default: false}
+                    body: {type: string, default: Service under maintenance.}
+                outputs:
+                  type: object
+                  description: Where the storage and CDN identifiers that upload tooling needs are published.
+                  required: [store, key]
+                  properties:
+                    store: {type: string, description: ClusterSecretStore receiving the values.}
+                    key: {type: string, description: Remote key prefix; values are <key>-website-bucket-id and <key>-cloudfront-website-id.}

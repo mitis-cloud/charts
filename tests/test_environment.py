@@ -144,6 +144,13 @@ class AwsEnvironmentComposition(unittest.TestCase):
         manual = resource(docs, "Secret", "generated-openai-api-key")
         self.assertEqual(manual["stringData"], {"value": "-"})
 
+    def test_webapps_follow_the_environment_maintenance_switch(self):
+        webapp = resource(self.composed({"maintenance": {"enabled": True}}), "Webapp", "portal")
+        self.assertEqual(webapp["spec"]["hostname"], "portal.app.example.invalid")
+        self.assertTrue(webapp["spec"]["maintenance"]["enabled"])
+        self.assertEqual(webapp["spec"]["maintenance"]["body"], "<p>Back soon.</p>")
+        self.assertEqual(webapp["spec"]["outputs"], {"store": "aws-ssm", "key": "example-portal"})
+
     def test_package_builds(self):
         with tempfile.TemporaryDirectory() as directory:
             subprocess.run(
@@ -221,6 +228,54 @@ class PostgresDatabaseComposition(unittest.TestCase):
             self.assertEqual(keys, [f"example-pgsql-backend-{account}-password", f"example-pgsql-backend-{account}-url"])
         generated = [d for d in docs.values() if d["kind"] == "ExternalSecret" and d["metadata"]["name"].endswith("-generated")]
         self.assertTrue(all(d["spec"]["refreshPolicy"] == "CreatedOnce" for d in generated))
+
+
+
+class AwsWebappComposition(unittest.TestCase):
+    composition = CROSSPLANE / "webapp/aws.yaml"
+
+    def composed(self, observed=None):
+        xr = yaml.safe_load((ROOT / "examples/crossplane/webapp.yaml").read_text())
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "xr.yaml"
+            path.write_text(yaml.safe_dump(xr))
+            command = [
+                "crossplane", "render", str(path), str(self.composition), str(FIXTURES / "functions.yaml"),
+                "--required-resources", str(FIXTURES / "platform-aws.yaml"),
+            ]
+            if observed:
+                command += ["--observed-resources", str(FIXTURES / observed)]
+            result = subprocess.run(command, text=True, capture_output=True)
+            if result.returncode:
+                raise AssertionError(result.stderr)
+            return {
+                d["metadata"]["annotations"]["crossplane.io/composition-resource-name"]: d
+                for d in documents(result.stdout)[1:]
+            }
+
+    def test_dependent_resources_wait_for_their_inputs(self):
+        first = self.composed()
+        for waiting in ["distribution", "website-policy", "validation", "record-a", "outputs-publish"]:
+            self.assertNotIn(waiting, first)
+        self.assertEqual(first["website-bucket"]["metadata"]["annotations"]["crossplane.io/external-name"], "portal.app.example.invalid")
+        self.assertEqual(first["logs-bucket"]["metadata"]["annotations"]["crossplane.io/external-name"], "example-portal-logs")
+        self.assertEqual(first["certificate"]["spec"]["forProvider"]["region"], "us-east-1")
+        self.assertEqual(first["certificate"]["spec"]["forProvider"]["domainName"], "*.portal.app.example.invalid")
+
+    def test_adopted_names_are_kept_and_the_distribution_is_wired(self):
+        docs = self.composed("webapp-observed.yaml")
+        self.assertEqual(docs["logs-bucket"]["metadata"]["annotations"]["crossplane.io/external-name"], "legacy-portal-logs-abc123")
+        self.assertEqual(docs["function"]["metadata"]["annotations"]["crossplane.io/external-name"], "legacy-portal-function")
+        distribution = docs["distribution"]["spec"]["forProvider"]
+        self.assertEqual(docs["distribution"]["metadata"]["annotations"]["crossplane.io/external-name"], "E1EXAMPLEDIST")
+        self.assertEqual(distribution["origin"][0]["s3OriginConfig"]["originAccessIdentity"], "origin-access-identity/cloudfront/E2EXAMPLEOAI")
+        self.assertEqual(distribution["origin"][0]["domainName"], "portal.app.example.invalid.s3.eu-west-1.amazonaws.com")
+        self.assertEqual(distribution["loggingConfig"]["bucket"], "legacy-portal-logs-abc123.s3.amazonaws.com")
+        self.assertEqual([b["pathPattern"] for b in distribution["orderedCacheBehavior"]], ["/assets/*"])
+        self.assertEqual(distribution["defaultCacheBehavior"]["functionAssociation"][0]["functionArn"], "arn:aws:cloudfront::000000000000:function/legacy-portal-function")
+        self.assertEqual(docs["record-a"]["spec"]["forProvider"]["zoneId"], "Z0000000000NESTED")
+        self.assertEqual(docs["validation"]["spec"]["forProvider"]["name"], "_abc.portal.app.example.invalid.")
+        self.assertIn("maintenanceEnabled = false", docs["function-code"]["stringData"]["code"])
 
 
 if __name__ == "__main__":
