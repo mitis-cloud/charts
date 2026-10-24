@@ -32,10 +32,10 @@
       "type": "object", "additionalProperties": false, "required": ["services"], "properties": {
         "allowTags": {"type": "string", "minLength": 1, "description": "Image-tag regular expression for this unit's Warehouse, overriding discovery.allowTags."},
         "services": {"type": "object", "minProperties": 1, "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {
-          "type": "object", "additionalProperties": false, "required": ["chart", "images"], "properties": {
+          "type": "object", "additionalProperties": false, "required": ["chart"], "properties": {
             "chart": {"$ref": "#/definitions/name"}, "releaseName": {"$ref": "#/definitions/name"},
             "order": {"type": "integer", "minimum": 0, "maximum": 100, "description": "Service slot within the coordinated Application. Later slots wait for earlier services' after-jobs."},
-            "images": {"type": "object", "minProperties": 1, "propertyNames": {"pattern": "^([a-zA-Z][a-zA-Z0-9_-]*\\.)*digest$"}, "additionalProperties": {"type": "string", "minLength": 1}, "description": "Values paths to immutable image digests and the image repositories they promote. Keys must already exist in environment overrides."},
+            "images": {"type": "object", "minProperties": 1, "propertyNames": {"pattern": "^([a-zA-Z][a-zA-Z0-9_-]*\\.)*digest$"}, "additionalProperties": {"type": "string", "minLength": 1}, "description": "Values paths to immutable image digests and the image repositories they promote. Keys must already exist in environment overrides. A unit without any is configuration: it syncs automatically and has no Kargo stage."},
             "capacityTargets": {"type": "array", "items": {
               "type": "object", "additionalProperties": false, "required": ["name", "kind"], "properties": {
                 "name": {"$ref": "#/definitions/name"}, "kind": {"enum": ["Deployment", "Rollout"]}

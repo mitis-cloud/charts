@@ -1,5 +1,6 @@
 {{- $root := . -}}
 {{- range $unitName, $unit := .Values.releaseUnits }}
+{{- if include "mitis.delivery.promoted" $unit }}
 ---
 apiVersion: kargo.akuity.io/v1alpha1
 kind: PromotionTask
@@ -48,4 +49,5 @@ spec:
         apps:
           - name: {{ $root.Values.project }}-{{ $unitName }}-{{ "${{ vars.environment }}" }}
             namespace: {{ $root.Values.argoNamespace }}
+{{- end }}
 {{- end }}

@@ -15,11 +15,14 @@ spec:
   promotionPolicies:
     {{- range $envName, $env := .Values.environments }}
     {{- range $unitName := $env.units | default (keys $root.Values.releaseUnits | sortAlpha) }}
+    {{- if include "mitis.delivery.promoted" (index $root.Values.releaseUnits $unitName) }}
     - stageSelector: {name: {{ $unitName }}-{{ $envName }}}
       autoPromotionEnabled: {{ eq ($env.promotion | default "manual") "automatic" }}
     {{- end }}
     {{- end }}
+    {{- end }}
 {{- range $unitName, $unit := .Values.releaseUnits }}
+{{- if include "mitis.delivery.promoted" $unit }}
 ---
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Warehouse
@@ -43,8 +46,10 @@ spec:
     {{- end }}
     {{- end }}
 {{- end }}
+{{- end }}
 {{- range $envName, $env := .Values.environments }}
 {{- range $unitName := $env.units | default (keys $root.Values.releaseUnits | sortAlpha) }}
+{{- if include "mitis.delivery.promoted" (index $root.Values.releaseUnits $unitName) }}
 ---
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Stage
@@ -70,5 +75,6 @@ spec:
           as: promote
           vars:
             - {name: environment, value: {{ $envName }}}
+{{- end }}
 {{- end }}
 {{- end }}

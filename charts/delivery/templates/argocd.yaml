@@ -38,10 +38,13 @@ spec:
             releaseName: {{ $service.releaseName | default $serviceName }}
             valueFiles:
               - $values/{{ $root.Values.git.services }}/{{ $serviceName }}.yaml
+              {{- /* Shared values speak the service chart's vocabulary: other charts get only their own files. */}}
+              {{- if has "" ($chart.serviceScopes | default list) }}
               {{ "{{- range .layers }}" }}
               - $values/{{ "{{ . }}" }}
               {{ "{{- end }}" }}
               - $values/{{ $root.Values.git.environments }}/{{ "{{ .environment }}" }}/defaults.yaml
+              {{- end }}
               - $values/{{ $root.Values.git.environments }}/{{ "{{ .environment }}" }}/{{ $serviceName }}.yaml
             ignoreMissingValueFiles: false
             {{- with $chart.serviceScopes }}
@@ -65,14 +68,19 @@ spec:
   template:
     metadata:
       name: '{{ $root.Values.project }}-{{ $unitName }}-{{ "{{ .environment }}" }}'
+      {{- if include "mitis.delivery.promoted" $unit }}
       annotations:
         kargo.akuity.io/authorized-stage: '{{ $root.Values.project }}:{{ $unitName }}-{{ "{{ .environment }}" }}'
+      {{- end }}
     spec:
       project: '{{ $root.Values.project }}-{{ "{{ .environment }}" }}'
       destination:
         name: '{{ "{{ .cluster }}" }}'
         namespace: '{{ "{{ .namespace }}" }}'
       syncPolicy:
+        {{- if not (include "mitis.delivery.promoted" $unit) }}
+        automated: {prune: true, selfHeal: true}
+        {{- end }}
         syncOptions: [RespectIgnoreDifferences=true]
         retry:
           limit: 3

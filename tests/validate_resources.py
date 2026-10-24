@@ -173,7 +173,7 @@ def main():
                         for source in app["spec"]["sources"]:
                             if "helm" in source:
                                 files = source["helm"]["valueFiles"]
-                                assert len(files) >= 3 and len(set(files)) == len(files)
+                                assert len(files) >= 2 and len(set(files)) == len(files)
                                 assert all("//" not in file for file in files)
                         applications.append(app)
                 if doc["kind"] == "AnalysisTemplate":
@@ -200,6 +200,8 @@ def main():
         "example-backend-production",
         "example-worker-test",
         "example-worker-production",
+        "example-edge-test",
+        "example-edge-production",
     }
     print(
         f"Expanded {len(applications)} Application templates using native Go text/template; generated Application schemas valid."

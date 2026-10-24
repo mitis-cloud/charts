@@ -5,7 +5,7 @@ environments:
   test:
     cluster: test
     namespace: example-test
-    charts: {service: 0.1.0, environment: 0.1.0}
+    charts: {service: 0.1.0, environment: 0.1.0, proxy: 1.0.0}
     promotion: automatic
     layers: [stages/test.yaml]
     environment:
@@ -14,7 +14,7 @@ environments:
   production:
     cluster: production
     namespace: example
-    charts: {service: 0.1.0}
+    charts: {service: 0.1.0, proxy: 1.0.0}
     upstream: [test]
     promotion: manual
 releaseUnits:
@@ -34,3 +34,12 @@ releaseUnits:
       worker:
         chart: service
         images: {image.digest: ghcr.io/example/backend}
+  edge:
+    services:
+      edge-proxy:
+        chart: proxy
+charts:
+  proxy:
+    repository: https://charts.example.invalid
+    name: proxy
+    serviceScopes: []

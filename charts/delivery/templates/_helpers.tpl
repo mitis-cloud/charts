@@ -39,3 +39,8 @@
 {{- end -}}
 {{- end -}}
 {{- end -}}
+
+{{- /* A unit is promoted by Kargo when any of its services declares an image; otherwise it is configuration that syncs automatically. */}}
+{{- define "mitis.delivery.promoted" -}}
+{{- range $service := .services -}}{{- if $service.images -}}true{{- end -}}{{- end -}}
+{{- end -}}
