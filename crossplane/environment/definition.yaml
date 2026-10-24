@@ -25,6 +25,8 @@ spec:
                   message: Maintenance answers on the public exposure, which the environment must bind.
                 - rule: '(!has(self.databases) || size(self.databases) == 0) || has(self.secrets)'
                   message: Databases keep their credentials in the environment's secret store.
+                - rule: '(!has(self.webapps) || size(self.webapps) == 0) || has(self.secrets)'
+                  message: Webapps publish their identifiers to the environment's secret store.
               properties:
                 namespace:
                   type: string
@@ -107,6 +109,17 @@ spec:
                         additionalProperties:
                           type: string
                           enum: [admin, operator, reader]
+                webapps:
+                  type: object
+                  description: Static web applications by name. They share the environment's maintenance switch and body, and publish their storage and CDN identifiers under <prefix><name>.
+                  additionalProperties:
+                    type: object
+                    required: [hostname]
+                    properties:
+                      hostname: {type: string}
+                      cachedPaths:
+                        type: array
+                        items: {type: string}
                 maintenance:
                   type: object
                   description: While enabled, the listed public hostnames answer with a fixed response instead of reaching services.

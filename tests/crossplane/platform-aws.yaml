@@ -14,6 +14,11 @@ data:
       scheme: internal
       inboundCIDRs: [192.0.2.0/24]
   privateNetworks: [198.51.100.0/24]
+  region: eu-west-1
+  dns:
+    zones:
+      example.invalid: Z0000000000EXAMPLE
+      app.example.invalid: Z0000000000NESTED
   postgres:
     providerConfig: postgres
     adminRole: platform_admin

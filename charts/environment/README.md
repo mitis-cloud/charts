@@ -19,6 +19,7 @@ An environment is one application namespace and everything its services share: t
 
 | `secrets.store`, `secrets.prefix` | The ClusterSecretStore holding the environment's values and their remote key prefix. Required with `databases`. |
 | `secrets.generated` | Values by remote key suffix: `password` (default 32 characters with symbols), `string` (letters and digits, `length` required), `username` (lowercase letters), `manual` (a `-` placeholder a person replaces) or `value` (fixed content). Each is generated and published only when its remote key does not exist, so existing values are kept. |
+| `webapps.<name>` | A static single-page application at `hostname` (inside a platform DNS zone), with `cachedPaths` served with long-lived caching (default `/assets/*`). It follows the environment's maintenance switch and body, and publishes its bucket and CDN identifiers as `<prefix><name>-website-bucket-id` and `<prefix><name>-cloudfront-website-id` for upload tooling. Requires `secrets`. |
 | `databases.<key>` | A PostgreSQL database `<namespace>-<key>` on the platform's shared instance: `extensions`, `schemas` (per schema `operator` and `reader` access: `full`, `read`, `read-execute` or `none`; `existingFunctions`, `adminMaintain`) and `accounts` (name to `admin`, `operator` or `reader` group). |
 
 See [the example](../../examples/environment/values.yaml) and [values.schema.json](values.schema.json).
@@ -27,7 +28,7 @@ Removing the release or its Argo CD Application leaves the `Environment` in plac
 
 ## Platform package
 
-`ghcr.io/mitis-cloud/platform` is a Crossplane Configuration with the `Environment` definition and its provider compositions. It depends on `function-environment-configs`, `function-go-templating`, `function-auto-ready` and `provider-sql`, which Crossplane installs with it. The platform then supplies:
+`ghcr.io/mitis-cloud/platform` is a Crossplane Configuration with the `Environment` definition and its provider compositions. It depends on `function-environment-configs`, `function-go-templating`, `function-auto-ready`, `provider-sql` and the AWS S3, CloudFront, ACM and Route53 providers. The platform then supplies:
 
 - An `EnvironmentConfig` named `mitis-platform` with the cluster's provider facts. For AWS:
 
@@ -48,6 +49,10 @@ Removing the release or its Argo CD Application leaves the `Environment` in plac
         scheme: internal
         inboundCIDRs: [192.0.2.0/24]  # optional
     privateNetworks: [198.51.100.0/24]
+    region: eu-west-1                 # needed for webapps
+    dns:
+      zones:                          # public zones webapp hostnames live in, by domain
+        example.invalid: Z0000000000EXAMPLE
     postgres:                         # shared PostgreSQL instance, needed for databases
       providerConfig: postgres        # provider-sql ClusterProviderConfig with superuser access
       adminRole: postgres             # the role that provider-sql connects as
@@ -83,6 +88,9 @@ Removing the release or its Argo CD Application leaves the `Environment` in plac
   ```
 
 - For databases, a provider-sql `ClusterProviderConfig` with superuser access to the instance, and a secret store that External Secrets can write (PushSecret).
+- For webapps on AWS, the S3, CloudFront, ACM and Route53 providers with a `default` `ClusterProviderConfig` allowed to manage buckets, distributions, functions, certificates and records in those zones.
+
+The package declares every function and provider it can use. A platform may install it with `skipDependencyResolution` and install only what its clusters need.
 
 On AWS, the composition renders the namespace, an `IngressClassParams` and `IngressClass` named `<namespace>-<exposure>` for each exposure, the isolation `NetworkPolicy` and, while maintenance is enabled, a fixed-response `Ingress` ordered before every service rule. It names no certificate: the AWS Load Balancer Controller discovers ACM certificates from each Ingress's hosts. Isolation needs a CNI that enforces NetworkPolicies, such as the VPC CNI with network policy enabled.
 
@@ -96,5 +104,6 @@ Crossplane takes over an existing object only when it already carries the annota
 | --- | --- |
 | Namespace `<namespace>` | `namespace` |
 | IngressClassParams and IngressClass `<namespace>-<exposure>` | `<exposure>-parameters` and `<exposure>-class` |
+| A webapp's buckets, identity, function, certificate, distribution and records | Pre-create each managed resource with its external name, the `<webapp>-<id>` name the composition uses, and `crossplane.io/composition-resource-name: <id>` |
 
 Databases, roles and grants are adopted by name with no annotation: existing passwords stay, because they are read from the existing remote keys. Then stop the previous owner from managing them without deleting them.

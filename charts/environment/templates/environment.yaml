@@ -23,3 +23,6 @@ spec:
   {{- with .Values.databases }}
   databases: {{ toJson . }}
   {{- end }}
+  {{- with .Values.webapps }}
+  webapps: {{ toJson . }}
+  {{- end }}

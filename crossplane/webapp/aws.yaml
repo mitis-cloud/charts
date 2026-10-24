@@ -1,0 +1,332 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: webapps.aws.mitis.cloud
+  labels:
+    mitis.cloud/provider: aws
+spec:
+  compositeTypeRef:
+    apiVersion: mitis.cloud/v1alpha1
+    kind: Webapp
+  mode: Pipeline
+  pipeline:
+    - step: platform
+      functionRef:
+        name: crossplane-contrib-function-environment-configs
+      input:
+        apiVersion: environmentconfigs.fn.crossplane.io/v1beta1
+        kind: Input
+        spec:
+          environmentConfigs:
+            - type: Reference
+              ref:
+                name: mitis-platform
+    - step: render
+      functionRef:
+        name: crossplane-contrib-function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource }}
+            {{- $ns := $xr.metadata.namespace }}
+            {{- $name := $xr.metadata.name }}
+            {{- $spec := $xr.spec }}
+            {{- $host := $spec.hostname }}
+            {{- $platform := index .context "apiextensions.crossplane.io/environment" }}
+            {{- $region := $platform.region }}
+            {{- $observed := .observed.resources | default dict }}
+            {{- $zone := "" }}{{ $zoneLength := 0 }}
+            {{- range $domain, $id := $platform.dns.zones }}
+            {{- if and (or (eq $host $domain) (hasSuffix (printf ".%s" $domain) $host)) (gt (len $domain) $zoneLength) }}{{ $zone = $id }}{{ $zoneLength = len $domain }}{{ end }}
+            {{- end }}
+            {{- /* Adopted and provider-named resources keep the external name already recorded on them. */}}
+            {{- $external := dict }}
+            {{- range $id, $resource := $observed }}
+            {{- with dig "resource" "metadata" "annotations" "crossplane.io/external-name" "" $resource }}{{ $_ := set $external $id . }}{{ end }}
+            {{- end }}
+            {{- $bucket := get $external "website-bucket" | default $host }}
+            {{- $logs := get $external "logs-bucket" | default (printf "%s-%s-logs" $ns $name) }}
+            {{- $function := get $external "function" | default (printf "%s-%s-cloudfront-function" $ns $name) }}
+            {{- $identity := dig "identity" "resource" "status" "atProvider" dict $observed }}
+            {{- $certificate := dig "certificate" "resource" "status" "atProvider" dict $observed }}
+            {{- $functionArn := dig "function" "resource" "status" "atProvider" "arn" "" $observed }}
+            {{- $distribution := dig "distribution" "resource" "status" "atProvider" dict $observed }}
+            {{- $tags := dict "Name" (printf "%s-%s-website" $ns $name) }}
+            {{- $s3 := list }}
+            {{- range $prefix, $target := dict "website" $bucket "logs" $logs }}
+            {{- $s3 = append $s3 (dict "kind" "BucketOwnershipControls" "id" (printf "%s-ownership" $prefix) "forProvider" (dict "bucket" $target "rule" (dict "objectOwnership" "BucketOwnerPreferred"))) }}
+            {{- $s3 = append $s3 (dict "kind" "BucketServerSideEncryptionConfiguration" "id" (printf "%s-encryption" $prefix) "forProvider" (dict "bucket" $target "rule" (list (dict "applyServerSideEncryptionByDefault" (dict "sseAlgorithm" "AES256") "bucketKeyEnabled" false)))) }}
+            {{- $s3 = append $s3 (dict "kind" "BucketPublicAccessBlock" "id" (printf "%s-public-access" $prefix) "forProvider" (dict "bucket" $target "blockPublicAcls" true "blockPublicPolicy" true "ignorePublicAcls" true "restrictPublicBuckets" true)) }}
+            {{- end }}
+            {{- $s3 = append $s3 (dict "kind" "Bucket" "id" "website-bucket" "external" $bucket "forProvider" (dict "tags" $tags)) }}
+            {{- $s3 = append $s3 (dict "kind" "Bucket" "id" "logs-bucket" "external" $logs "forProvider" dict) }}
+            {{- $s3 = append $s3 (dict "kind" "BucketVersioning" "id" "website-versioning" "forProvider" (dict "bucket" $bucket "versioningConfiguration" (dict "status" "Enabled"))) }}
+            {{- $s3 = append $s3 (dict "kind" "BucketCorsConfiguration" "id" "website-cors" "forProvider" (dict "bucket" $bucket "corsRule" (list (dict "allowedHeaders" (list "Authorization" "Content-Length") "allowedMethods" (list "POST" "GET") "allowedOrigins" (list (printf "https://%s" $host)) "maxAgeSeconds" 3600)))) }}
+            {{- $s3 = append $s3 (dict "kind" "BucketLogging" "id" "website-logging" "forProvider" (dict "bucket" $bucket "targetBucket" $logs "targetPrefix" "website/")) }}
+            {{- $logsPolicy := dict "Version" "2012-10-17" "Statement" (list
+                (dict "Sid" "ServerAccessLogs" "Effect" "Allow" "Principal" (dict "Service" "logging.s3.amazonaws.com") "Action" "s3:PutObject" "Resource" (printf "arn:aws:s3:::%s/*" $logs) "Condition" (dict "ArnLike" (dict "aws:SourceArn" (printf "arn:aws:s3:::%s" $bucket))))
+                (dict "Sid" "https-only" "Effect" "Deny" "Principal" "*" "Action" "s3:*" "Resource" (list (printf "arn:aws:s3:::%s/*" $logs) (printf "arn:aws:s3:::%s" $logs)) "Condition" (dict "Bool" (dict "aws:SecureTransport" "false")))) }}
+            {{- $s3 = append $s3 (dict "kind" "BucketPolicy" "id" "logs-policy" "forProvider" (dict "bucket" $logs "policy" (toJson $logsPolicy))) }}
+            {{- with $identity.iamArn }}
+            {{- $websitePolicy := dict "Version" "2012-10-17" "Statement" (list (dict "Sid" "OAIAccessOnly" "Effect" "Allow" "Principal" (dict "AWS" .) "Action" "s3:GetObject" "Resource" (printf "arn:aws:s3:::%s/*" $bucket))) }}
+            {{- $s3 = append $s3 (dict "kind" "BucketPolicy" "id" "website-policy" "forProvider" (dict "bucket" $bucket "policy" (toJson $websitePolicy))) }}
+            {{- end }}
+            {{- range $resource := $s3 }}
+            ---
+            apiVersion: s3.aws.m.upbound.io/v1beta1
+            kind: {{ $resource.kind }}
+            metadata:
+              name: {{ $name }}-{{ $resource.id }}
+              namespace: {{ $ns }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: {{ $resource.id }}
+                {{- with $resource.external | default (get $external $resource.id) }}
+                crossplane.io/external-name: {{ . }}
+                {{- end }}
+            spec:
+              forProvider: {{ merge (dict "region" $region) $resource.forProvider | toJson }}
+            {{- end }}
+            ---
+            apiVersion: cloudfront.aws.m.upbound.io/v1beta1
+            kind: OriginAccessIdentity
+            metadata:
+              name: {{ $name }}-identity
+              namespace: {{ $ns }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: identity
+                {{- with get $external "identity" }}
+                crossplane.io/external-name: {{ . }}
+                {{- end }}
+            spec:
+              forProvider:
+                comment: OAI to restrict access to AWS S3 content
+            ---
+            apiVersion: v1
+            kind: Secret
+            metadata:
+              name: {{ $name }}-function-code
+              namespace: {{ $ns }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: function-code
+                gotemplating.fn.crossplane.io/ready: "True"
+            stringData:
+              code: |
+                function handler(event) {
+                    var request = event.request;
+                    var uri = request.uri;
+                    var maintenanceEnabled = {{ dig "maintenance" "enabled" false $spec }};
+
+                    if (maintenanceEnabled) {
+                        return {
+                            statusCode: 503,
+                            statusDescription: 'Service Unavailable',
+                            body: {{ dig "maintenance" "body" "Service under maintenance." $spec | toJson }}
+                        };
+                    }
+
+                    if (uri.endsWith('/')) {
+                        uri = uri.slice(0, -1);
+                    }
+
+                    // Single-page application: anything that is not a file is the application.
+                    if (decodeURIComponent(uri).includes(':') || !uri.includes('.')) {
+                        uri = '/index.html';
+                    }
+
+                    // SAML identity providers finish with a POST, which a static site cannot accept.
+                    if (request.method === "POST") {
+                        return {
+                            statusCode: 302,
+                            statusDescription: 'Found',
+                            headers: {"location": {"value": "/"}}
+                        };
+                    }
+
+                    request.uri = uri;
+                    return request;
+                }
+            ---
+            apiVersion: cloudfront.aws.m.upbound.io/v1beta1
+            kind: Function
+            metadata:
+              name: {{ $name }}-function
+              namespace: {{ $ns }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: function
+                crossplane.io/external-name: {{ $function }}
+            spec:
+              forProvider:
+                runtime: cloudfront-js-2.0
+                publish: true
+                codeSecretRef:
+                  name: {{ $name }}-function-code
+                  key: code
+            ---
+            apiVersion: acm.aws.m.upbound.io/v1beta1
+            kind: Certificate
+            metadata:
+              name: {{ $name }}-certificate
+              namespace: {{ $ns }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: certificate
+                {{- with get $external "certificate" }}
+                crossplane.io/external-name: {{ . }}
+                {{- end }}
+            spec:
+              forProvider:
+                # CDN certificates live in us-east-1.
+                region: us-east-1
+                domainName: '*.{{ $host }}'
+                subjectAlternativeNames: [{{ $host | quote }}]
+                validationMethod: DNS
+            {{- with $certificate.domainValidationOptions }}
+            {{- $validation := first . }}
+            ---
+            apiVersion: route53.aws.m.upbound.io/v1beta1
+            kind: Record
+            metadata:
+              name: {{ $name }}-validation
+              namespace: {{ $ns }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: validation
+                {{- with get $external "validation" }}
+                crossplane.io/external-name: {{ . }}
+                {{- end }}
+            spec:
+              forProvider:
+                zoneId: {{ $zone }}
+                name: {{ $validation.resourceRecordName }}
+                type: {{ $validation.resourceRecordType }}
+                records: [{{ $validation.resourceRecordValue | quote }}]
+                ttl: 60
+                allowOverwrite: true
+            {{- end }}
+            {{- if and $identity.cloudfrontAccessIdentityPath $functionArn $certificate.arn }}
+            ---
+            apiVersion: cloudfront.aws.m.upbound.io/v1beta1
+            kind: Distribution
+            metadata:
+              name: {{ $name }}-distribution
+              namespace: {{ $ns }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: distribution
+                {{- with get $external "distribution" }}
+                crossplane.io/external-name: {{ . }}
+                {{- end }}
+            spec:
+              forProvider:
+                aliases: [{{ $host | quote }}]
+                comment: ""
+                enabled: true
+                isIpv6Enabled: true
+                httpVersion: http2
+                priceClass: PriceClass_100
+                defaultRootObject: index.html
+                waitForDeployment: false
+                tags: {{ toJson $tags }}
+                loggingConfig:
+                  bucket: {{ $logs }}.s3.amazonaws.com
+                  includeCookies: false
+                  prefix: cloudfront_website
+                origin:
+                  - originId: {{ $bucket }}
+                    domainName: {{ $bucket }}.s3.{{ $region }}.amazonaws.com
+                    connectionAttempts: 3
+                    connectionTimeout: 10
+                    s3OriginConfig:
+                      originAccessIdentity: {{ $identity.cloudfrontAccessIdentityPath }}
+                defaultCacheBehavior:
+                  targetOriginId: {{ $bucket }}
+                  viewerProtocolPolicy: redirect-to-https
+                  # Managed-CachingDisabled and Managed-CORS-S3Origin.
+                  cachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+                  originRequestPolicyId: 88a5eaf4-2fd4-4709-b370-b4c650ea3fcf
+                  compress: false
+                  allowedMethods: [GET, HEAD]
+                  cachedMethods: [GET, HEAD]
+                  functionAssociation:
+                    - eventType: viewer-request
+                      functionArn: {{ $functionArn }}
+                orderedCacheBehavior:
+                  {{- range $path := $spec.cachedPaths | default (list "/assets/*") }}
+                  - pathPattern: {{ $path | quote }}
+                    targetOriginId: {{ $bucket }}
+                    viewerProtocolPolicy: redirect-to-https
+                    # Managed-CachingOptimized.
+                    cachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+                    originRequestPolicyId: 88a5eaf4-2fd4-4709-b370-b4c650ea3fcf
+                    compress: true
+                    allowedMethods: [GET, HEAD]
+                    cachedMethods: [GET, HEAD]
+                  {{- end }}
+                restrictions:
+                  geoRestriction:
+                    restrictionType: none
+                viewerCertificate:
+                  acmCertificateArn: {{ $certificate.arn }}
+                  cloudfrontDefaultCertificate: false
+                  minimumProtocolVersion: TLSv1.2_2021
+                  sslSupportMethod: sni-only
+            {{- end }}
+            {{- with $distribution.domainName }}
+            {{- range $type := list "A" "AAAA" }}
+            ---
+            apiVersion: route53.aws.m.upbound.io/v1beta1
+            kind: Record
+            metadata:
+              name: {{ $name }}-record-{{ $type | lower }}
+              namespace: {{ $ns }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: record-{{ $type | lower }}
+                {{- with get $external (printf "record-%s" ($type | lower)) }}
+                crossplane.io/external-name: {{ . }}
+                {{- end }}
+            spec:
+              forProvider:
+                zoneId: {{ $zone }}
+                name: {{ $host }}
+                type: {{ $type }}
+                alias:
+                  name: {{ $distribution.domainName }}
+                  # CloudFront's fixed alias zone.
+                  zoneId: Z2FDTNDATAQYW2
+                  evaluateTargetHealth: false
+            {{- end }}
+            ---
+            apiVersion: v1
+            kind: Secret
+            metadata:
+              name: {{ $name }}-outputs
+              namespace: {{ $ns }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: outputs
+                gotemplating.fn.crossplane.io/ready: "True"
+            stringData:
+              bucket: {{ $bucket }}
+              distribution: {{ $distribution.id }}
+            ---
+            # Upload tooling finds the bucket and the distribution to invalidate here.
+            apiVersion: external-secrets.io/v1alpha1
+            kind: PushSecret
+            metadata:
+              name: {{ $name }}-outputs
+              namespace: {{ $ns }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: outputs-publish
+            spec:
+              secretStoreRefs:
+                - kind: ClusterSecretStore
+                  name: {{ $spec.outputs.store }}
+              selector:
+                secret:
+                  name: {{ $name }}-outputs
+              data:
+                - match: {secretKey: bucket, remoteRef: {remoteKey: {{ $spec.outputs.key }}-website-bucket-id}}
+                - match: {secretKey: distribution, remoteRef: {remoteKey: {{ $spec.outputs.key }}-cloudfront-website-id}}
+            {{- end }}
+    - step: ready
+      functionRef:
+        name: crossplane-contrib-function-auto-ready

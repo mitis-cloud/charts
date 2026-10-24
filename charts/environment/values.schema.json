@@ -235,6 +235,29 @@
           }
         }
       }
+    },
+    "webapps": {
+      "type": "object",
+      "description": "Static web applications by name, sharing the environment's maintenance switch.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "hostname"
+        ],
+        "properties": {
+          "hostname": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cachedPaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
     }
   },
   "allOf": [
@@ -247,6 +270,23 @@
         },
         "required": [
           "databases"
+        ]
+      },
+      "then": {
+        "required": [
+          "secrets"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "webapps": {
+            "minProperties": 1
+          }
+        },
+        "required": [
+          "webapps"
         ]
       },
       "then": {
