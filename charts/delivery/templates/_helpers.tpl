@@ -1,6 +1,14 @@
 {{- define "mitis.delivery.validate" -}}
 {{- $root := . -}}
 {{- $owners := dict -}}
+{{- $filters := dict -}}
+{{- range $unitName, $unit := .Values.releaseUnits -}}
+{{- $filter := $unit.allowTags | default $root.Values.discovery.allowTags -}}
+{{- range $service := $unit.services -}}{{- range $image := $service.images -}}
+{{- if and (hasKey $filters $image) (ne (index $filters $image) $filter) -}}{{ fail (printf "image %s is discovered with two different tag filters" $image) }}{{- end -}}
+{{- $_ := set $filters $image $filter -}}
+{{- end -}}{{- end -}}
+{{- end -}}
 {{- range $unitName, $unit := .Values.releaseUnits -}}
 {{- range $name, $service := $unit.services -}}
 {{- if hasKey $owners $name -}}{{ fail (printf "service %s belongs to more than one release unit" $name) }}{{- end -}}
@@ -43,4 +51,19 @@
 {{- /* A unit is promoted by Kargo when any of its services declares an image; otherwise it is configuration that syncs automatically. */}}
 {{- define "mitis.delivery.promoted" -}}
 {{- range $service := .services -}}{{- if $service.images -}}true{{- end -}}{{- end -}}
+{{- end -}}
+
+{{- /* Release units an environment deploys, in name order. */}}
+{{- define "mitis.delivery.units" -}}
+{{- toJson (.env.units | default (keys .root.Values.releaseUnits) | sortAlpha) -}}
+{{- end -}}
+
+{{- /* The promoted units an environment deploys: its Stage moves them together. */}}
+{{- define "mitis.delivery.promotedUnits" -}}
+{{- $root := .root -}}
+{{- $out := list -}}
+{{- range $unitName := include "mitis.delivery.units" . | fromJsonArray -}}
+{{- if include "mitis.delivery.promoted" (index $root.Values.releaseUnits $unitName) -}}{{ $out = append $out $unitName }}{{- end -}}
+{{- end -}}
+{{- toJson $out -}}
 {{- end -}}

@@ -34,7 +34,7 @@ releaseUnits:
     services:
       worker:
         chart: service
-        images: {image.digest: ghcr.io/example/backend}
+        images: {image.digest: ghcr.io/example/worker}
   edge:
     services:
       edge-proxy:

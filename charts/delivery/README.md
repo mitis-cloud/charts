@@ -42,7 +42,7 @@ Optional `environment` holds [environment chart](../environment/README.md) value
 
 Optional `externallyScaled: true` declares that replica counts change outside Git, for example through scheduled downscaling: Argo ignores `spec.replicas` on Deployments, StatefulSets and Rollouts there, so automatic synchronization does not fight the scaler.
 
-Optional `units` selects which defined release units exist there; omission selects all. `upstream` is a list of predecessor environment names. An empty list means direct Warehouse discovery. `promotion` is `manual` (default) or `automatic`. `routing` is `gateway` (default) or `ingress`.
+Optional `units` selects which defined release units exist there; omission selects all. `upstream` is a list of predecessor environment names. An empty list means direct discovery from the project Warehouse. `promotion` is `manual` (default) or `automatic`. `routing` is `gateway` (default) or `ingress`.
 
 Names do not infer edges, create missing environments, or impose tenant/stage dimensions. Unknown references, missing pins, promotion cycles, and upstreams that lack a required unit fail rendering. Two upstreams are eligible sources, not a requirement that both separately approve the same Freight.
 
@@ -53,23 +53,23 @@ Names do not infer edges, create missing environments, or impose tenant/stage di
 - `chart`: a key in `charts`.
 - `releaseName`: optional Helm release identity; defaults to the service key.
 - `order`: coordinated-service slot (0–100, default 0); a later service waits for earlier slots' after-jobs within the Application.
-- `images`: values paths mapped to image repositories, e.g. `image.digest: ghcr.io/example/backend`. Wrapper paths may be nested. A unit Warehouse subscribes once per unique repository. A unit where no service declares images is configuration: no Kargo resources, and its Applications sync automatically.
-- `allowTags` (unit level, beside `services`): image-tag regular expression for this unit's Warehouse, overriding `discovery.allowTags`, for example `^[0-9a-f]{7}$` for commit tags. Warehouses select the newest build among matching tags.
+- `images`: values paths mapped to image repositories, e.g. `image.digest: ghcr.io/example/backend`. Wrapper paths may be nested. The project Warehouse subscribes once per unique repository. A unit where no service declares images is configuration: Kargo does not promote it, and its Applications sync automatically.
+- `allowTags` (unit level, beside `services`): image-tag regular expression for this unit's images, overriding `discovery.allowTags`, for example `^[0-9a-f]{7}$` for commit tags. The newest build among matching tags is selected. An image shared by two units must use the same filter.
 - `capacityTargets`: exact `{name, kind}` references for Understudy-managed Deployment/Rollout replicas. This declares field ownership for Argo, not capacity values. Match it to the service's actual protection resources and keep it absent for unprotected targets.
 
-A service belongs to only one release unit. Each environment × unit gets its own Kargo Stage, queue, automatic-promotion policy, health, and history. Every unit gets one ApplicationSet whose explicit list generator selects its environments and produces one coordinated Application per environment.
+A service belongs to only one release unit. A unit is the Argo CD side of a release: every unit gets one ApplicationSet whose explicit list generator selects its environments and produces one coordinated Application per environment. Promotion happens per environment, not per unit.
 
 Argo AppProjects permit namespace-scoped resources from the configured repositories at the configured destination. They do not grant cluster-scoped application resources; shared CRDs/controllers remain separately owned infrastructure.
 
 ## Native promotion
 
-The chart emits Kargo Project, ProjectConfig, Warehouse, Stage, and PromotionTask resources. A task clones the configuration branch, updates only its unit's service/environment **digest** fields, commits/pushes with native conflict handling, synchronizes its exact Application, and waits for health.
+The chart emits a Kargo Project, ProjectConfig, one Warehouse for the whole project and one Stage per environment, named after it. Each Freight is the project's complete set of images, so an environment always runs one coherent version set. Promoting it clones the configuration branch, updates every promoted **digest** field of the environment's units in one commit, pushes with native conflict handling, synchronizes each promoted Application, and waits for health. Unchanged services synchronize as no-ops, but their sync hooks run again.
 
 Kargo `yaml-update` changes existing scalar keys only. Seed every promoted digest field in `environments/<environment>/<service>.yaml` before activation. Supply real immutable digests; do not point a digest field at a tag. Missing fields are promotion failures, not permission to synthesize a second generated service file.
 
 Multiple repositories in one Warehouse do not prove images came from the same coordinated build. That coherence must be established by the project's build/release process if it is required. Concurrent promotions use native git-push integration; genuine edit conflicts fail visibly.
 
-Applications authorize precisely `<project>:<unit>-<environment>` for Kargo. Kargo writes Git, then requests a full synchronization of the configured branch. Every environment tracks that shared branch, so health is Synced and Healthy rather than a match against the pushed commit: pinning the commit would mark every other environment unhealthy after any later commit. Argo CD's branch-resolution cache can make a sync immediately after the push apply the previous commit while the promotion still succeeds; verify the running digest where that matters. The chart does not enable Argo automatic synchronization: Kargo requests full syncs after promotions, and configuration-only sync policy is an explicit operational choice for the adopting platform.
+Applications authorize precisely their environment's Stage, `<project>:<environment>`, for Kargo. Kargo writes Git, then requests a full synchronization of the configured branch. Every environment tracks that shared branch, so health is Synced and Healthy rather than a match against the pushed commit: pinning the commit would mark every other environment unhealthy after any later commit. Argo CD's branch-resolution cache can make a sync immediately after the push apply the previous commit while the promotion still succeeds; verify the running digest where that matters. Promoted units are not synchronized automatically: Kargo requests full syncs after promotions. Configuration units synchronize automatically.
 
 ## Lifecycle and evidence
 

@@ -109,7 +109,7 @@ spec:
       name: '{{ $root.Values.project }}-{{ $unitName }}-{{ "{{ .environment }}" }}'
       {{- if include "mitis.delivery.promoted" $unit }}
       annotations:
-        kargo.akuity.io/authorized-stage: '{{ $root.Values.project }}:{{ $unitName }}-{{ "{{ .environment }}" }}'
+        kargo.akuity.io/authorized-stage: '{{ $root.Values.project }}:{{ "{{ .environment }}" }}'
       {{- end }}
     spec:
       project: '{{ $root.Values.project }}-{{ "{{ .environment }}" }}'

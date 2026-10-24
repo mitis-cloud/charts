@@ -134,8 +134,8 @@ def main():
                     native.append(doc)
                 else:
                     raise AssertionError(f"No validation schema for {key}")
-                if doc["kind"] == "PromotionTask":
-                    for step in doc["spec"]["steps"]:
+                if doc["kind"] == "Stage":
+                    for step in doc["spec"]["promotionTemplate"]["spec"]["steps"]:
                         schema = step_schemas[f"{step['uses']}-config.json"]
                         jsonschema.Draft202012Validator(
                             schema, registry=registry

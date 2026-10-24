@@ -656,39 +656,49 @@ class DeliveryContract(unittest.TestCase):
     chart = ROOT / "charts/delivery"
     example = ROOT / "examples/delivery/platform.yaml"
 
-    def test_isolated_promotion_boundaries(self):
+    def test_one_freight_per_project_and_one_stage_per_environment(self):
         docs = render(self.chart, self.example)
-        stages = [d for d in docs if d["kind"] == "Stage"]
-        self.assertEqual(4, len(stages))
+        warehouses = [d for d in docs if d["kind"] == "Warehouse"]
+        self.assertEqual(["example"], [w["metadata"]["name"] for w in warehouses])
         self.assertEqual(
-            {"backend-test", "backend-production", "worker-test", "worker-production"},
-            {d["metadata"]["name"] for d in stages},
+            ["ghcr.io/example/backend", "ghcr.io/example/database", "ghcr.io/example/worker"],
+            [s["image"]["repoURL"] for s in warehouses[0]["spec"]["subscriptions"]],
         )
-        for stage in stages:
-            self.assertEqual(1, len(stage["spec"]["requestedFreight"]))
-            self.assertEqual(
-                1, len(stage["spec"]["promotionTemplate"]["spec"]["steps"])
-            )
-        ignores = self.expanded_spec(docs, "worker", "production")["ignoreDifferences"]
-        self.assertFalse(
-            any("/spec/replicas" in rule.get("jsonPointers", []) for rule in ignores)
+        stages = {d["metadata"]["name"]: d for d in docs if d["kind"] == "Stage"}
+        self.assertEqual({"test", "production"}, set(stages))
+        self.assertEqual(stages["production"]["spec"]["requestedFreight"][0]["sources"], {"stages": ["test"]})
+        steps = stages["production"]["spec"]["promotionTemplate"]["spec"]["steps"]
+        updates = [s["config"]["path"] for s in steps if s["uses"] == "yaml-update"]
+        self.assertEqual(updates, [f"./repo/environments/production/{s}.yaml" for s in ["api", "migrations", "worker"]])
+        sync = next(s for s in steps if s["uses"] == "argocd-update")
+        self.assertEqual(
+            [a["name"] for a in sync["config"]["apps"]],
+            ["example-backend-production", "example-worker-production"],
         )
-        task = resource(docs, "PromotionTask", "backend")
-        sync = next(s for s in task["spec"]["steps"] if s["uses"] == "argocd-update")
         # Health must not pin the shared branch to one promotion's commit.
-        self.assertNotIn("sources", sync["config"]["apps"][0])
+        self.assertTrue(all("sources" not in a for a in sync["config"]["apps"]))
+        self.assertFalse([d for d in docs if d["kind"] == "PromotionTask"])
+        app = resource(docs, "ApplicationSet", "example-backend")["spec"]["template"]
+        self.assertEqual(app["metadata"]["annotations"]["kargo.akuity.io/authorized-stage"], "example:{{ .environment }}")
+        ignores = self.expanded_spec(docs, "worker", "production")["ignoreDifferences"]
+        self.assertFalse(any("/spec/replicas" in rule.get("jsonPointers", []) for rule in ignores))
 
     def test_warehouse_uses_supported_tag_selection(self):
         # Kargo >= 1.11 rejects the deprecated allowTags field at discovery time.
         docs = render(self.chart, self.example)
-        for warehouse in (d for d in docs if d["kind"] == "Warehouse"):
-            expected = {
-                "backend": r"^v?[0-9]+\.[0-9]+\.[0-9]+$",
-                "worker": r"^[0-9a-f]{7}$",
-            }[warehouse["metadata"]["name"]]
-            for subscription in warehouse["spec"]["subscriptions"]:
-                self.assertNotIn("allowTags", subscription["image"])
-                self.assertEqual([expected], subscription["image"]["allowTagsRegexes"])
+        filters = {
+            s["image"]["repoURL"]: s["image"]["allowTagsRegexes"]
+            for s in resource(docs, "Warehouse", "example")["spec"]["subscriptions"]
+        }
+        self.assertTrue(all("allowTags" not in s["image"] for s in resource(docs, "Warehouse")["spec"]["subscriptions"]))
+        self.assertEqual(filters["ghcr.io/example/backend"], [r"^v?[0-9]+\.[0-9]+\.[0-9]+$"])
+        self.assertEqual(filters["ghcr.io/example/worker"], [r"^[0-9a-f]{7}$"])
+        render(
+            self.chart,
+            self.example,
+            {"releaseUnits": {"worker": {"services": {"worker": {"images": {"image.digest": "ghcr.io/example/backend"}}}}}},
+            success=False,
+        )
 
     def test_unknown_references_cycles_and_exclusions(self):
         for invalid in [
@@ -708,7 +718,11 @@ class DeliveryContract(unittest.TestCase):
             self.example,
             {"environments": {"production": {"units": ["backend"]}}},
         )
-        self.assertEqual(3, sum(d["kind"] == "Stage" for d in docs))
+        production = resource(docs, "Stage", "production")["spec"]["promotionTemplate"]["spec"]["steps"]
+        self.assertEqual(
+            [a["name"] for a in next(s for s in production if s["uses"] == "argocd-update")["config"]["apps"]],
+            ["example-backend-production"],
+        )
 
     def expanded_spec(self, docs, unit, environment):
         appset = resource(docs, "ApplicationSet", f"example-{unit}")
@@ -775,10 +789,8 @@ class DeliveryContract(unittest.TestCase):
     def test_units_without_images_are_configuration(self):
         docs = render(self.chart, self.example)
         self.assertFalse(
-            [d for d in docs if d["kind"] in ["Warehouse", "Stage", "PromotionTask"] and "edge" in d["metadata"]["name"]]
+            [s for s in resource(docs, "Stage", "test")["spec"]["promotionTemplate"]["spec"]["steps"] if "edge" in json.dumps(s)]
         )
-        policies = resource(docs, "ProjectConfig")["spec"]["promotionPolicies"]
-        self.assertFalse([p for p in policies if p["stageSelector"]["name"].startswith("edge-")])
         edge = resource(docs, "ApplicationSet", "example-edge")["spec"]["template"]
         self.assertTrue(edge["spec"]["syncPolicy"]["automated"]["selfHeal"])
         self.assertNotIn("annotations", edge["metadata"])
