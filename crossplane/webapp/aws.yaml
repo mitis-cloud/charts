@@ -183,8 +183,10 @@ spec:
                 # CDN certificates live in us-east-1.
                 region: us-east-1
                 domainName: '*.{{ $host }}'
-                subjectAlternativeNames: [{{ $host | quote }}]
+                subjectAlternativeNames: ['*.{{ $host }}', {{ $host | quote }}]
                 validationMethod: DNS
+                tags:
+                  Name: {{ $host }}
             {{- with $certificate.domainValidationOptions }}
             {{- $validation := first . }}
             ---
@@ -201,10 +203,10 @@ spec:
             spec:
               forProvider:
                 zoneId: {{ $zone }}
-                name: {{ $validation.resourceRecordName }}
+                name: {{ $validation.resourceRecordName | trimSuffix "." }}
                 type: {{ $validation.resourceRecordType }}
                 records: [{{ $validation.resourceRecordValue | quote }}]
-                ttl: 60
+                ttl: 300
                 allowOverwrite: true
             {{- end }}
             {{- if and $identity.cloudfrontAccessIdentityPath (or $functionArn (not $application)) $certificate.arn }}

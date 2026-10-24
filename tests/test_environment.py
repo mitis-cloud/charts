@@ -274,7 +274,7 @@ class AwsWebappComposition(unittest.TestCase):
         self.assertEqual([b["pathPattern"] for b in distribution["orderedCacheBehavior"]], ["/assets/*"])
         self.assertEqual(distribution["defaultCacheBehavior"]["functionAssociation"][0]["functionArn"], "arn:aws:cloudfront::000000000000:function/legacy-portal-function")
         self.assertEqual(docs["record-a"]["spec"]["forProvider"]["zoneId"], "Z0000000000NESTED")
-        self.assertEqual(docs["validation"]["spec"]["forProvider"]["name"], "_abc.portal.app.example.invalid.")
+        self.assertEqual(docs["validation"]["spec"]["forProvider"]["name"], "_abc.portal.app.example.invalid")
         self.assertIn("maintenanceEnabled = false", docs["function-code"]["stringData"]["code"])
 
     def test_files_mode_has_no_function_and_caches_everything(self):
