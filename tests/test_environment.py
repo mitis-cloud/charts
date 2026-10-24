@@ -294,7 +294,8 @@ class AwsWebappComposition(unittest.TestCase):
         behavior = docs["distribution"]["spec"]["forProvider"]["defaultCacheBehavior"]
         self.assertEqual(behavior["cachePolicyId"], "658327ea-f89d-4fab-a63d-7e88639e58f6")
         self.assertNotIn("functionAssociation", behavior)
-        self.assertFalse(docs["distribution"]["spec"]["forProvider"]["orderedCacheBehavior"])
+        # The CRD rejects null: an empty list.
+        self.assertEqual(docs["distribution"]["spec"]["forProvider"]["orderedCacheBehavior"], [])
 
 
 if __name__ == "__main__":
