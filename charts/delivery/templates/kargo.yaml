@@ -14,67 +14,103 @@ metadata:
 spec:
   promotionPolicies:
     {{- range $envName, $env := .Values.environments }}
-    {{- range $unitName := $env.units | default (keys $root.Values.releaseUnits | sortAlpha) }}
-    {{- if include "mitis.delivery.promoted" (index $root.Values.releaseUnits $unitName) }}
-    - stageSelector: {name: {{ $unitName }}-{{ $envName }}}
+    {{- if include "mitis.delivery.promotedUnits" (dict "root" $root "env" $env) | fromJsonArray }}
+    - stageSelector: {name: {{ $envName }}}
       autoPromotionEnabled: {{ eq ($env.promotion | default "manual") "automatic" }}
     {{- end }}
     {{- end }}
-    {{- end }}
+{{- /* One Warehouse per project: each Freight is the project's complete set of images. */}}
+{{- $repos := dict }}
 {{- range $unitName, $unit := .Values.releaseUnits }}
-{{- if include "mitis.delivery.promoted" $unit }}
+{{- range $service := $unit.services }}
+{{- range $image := $service.images }}
+{{- if not (hasKey $repos $image) }}{{ $_ := set $repos $image ($unit.allowTags | default $root.Values.discovery.allowTags) }}{{ end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if $repos }}
 ---
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Warehouse
 metadata:
-  name: {{ $unitName }}
-  namespace: {{ $root.Values.project }}
+  name: {{ .Values.project }}
+  namespace: {{ .Values.project }}
 spec:
-  interval: {{ $root.Values.discovery.interval }}
+  interval: {{ .Values.discovery.interval }}
   subscriptions:
-    {{- $repos := dict }}
-    {{- range $service := $unit.services }}
-    {{- range $image := $service.images }}
-    {{- if not (hasKey $repos $image) }}
+    {{- range $image := keys $repos | sortAlpha }}
     - image:
         repoURL: {{ $image | quote }}
         imageSelectionStrategy: NewestBuild
-        allowTagsRegexes: [{{ $unit.allowTags | default $root.Values.discovery.allowTags | quote }}]
+        allowTagsRegexes: [{{ index $repos $image | quote }}]
         discoveryLimit: {{ $root.Values.discovery.limit }}
-    {{- $_ := set $repos $image true }}
     {{- end }}
-    {{- end }}
-    {{- end }}
-{{- end }}
 {{- end }}
 {{- range $envName, $env := .Values.environments }}
-{{- range $unitName := $env.units | default (keys $root.Values.releaseUnits | sortAlpha) }}
-{{- if include "mitis.delivery.promoted" (index $root.Values.releaseUnits $unitName) }}
+{{- $promoted := include "mitis.delivery.promotedUnits" (dict "root" $root "env" $env) | fromJsonArray }}
+{{- if $promoted }}
 ---
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Stage
 metadata:
-  name: {{ $unitName }}-{{ $envName }}
+  name: {{ $envName }}
   namespace: {{ $root.Values.project }}
 spec:
   requestedFreight:
-    - origin: {kind: Warehouse, name: {{ $unitName }}}
+    - origin: {kind: Warehouse, name: {{ $root.Values.project }}}
       sources:
         {{- if $env.upstream }}
-        stages:
-          {{- range $upstream := $env.upstream }}
-          - {{ $unitName }}-{{ $upstream }}
-          {{- end }}
+        stages: {{ toJson $env.upstream }}
         {{- else }}
         direct: true
         {{- end }}
   promotionTemplate:
     spec:
       steps:
-        - task: {name: {{ $unitName }}}
-          as: promote
-          vars:
-            - {name: environment, value: {{ $envName }}}
-{{- end }}
+        - uses: git-clone
+          config:
+            repoURL: {{ $root.Values.git.repository | quote }}
+            checkout:
+              - branch: {{ $root.Values.git.revision | quote }}
+                path: ./repo
+        {{- range $unitName := $promoted }}
+        {{- range $serviceName, $service := (index $root.Values.releaseUnits $unitName).services }}
+        {{- with $service.images }}
+        - uses: yaml-update
+          config:
+            path: ./repo/{{ $root.Values.git.environments }}/{{ $envName }}/{{ $serviceName }}.yaml
+            updates:
+              {{- range $key, $image := . }}
+              - key: {{ $key | quote }}
+                value: {{ printf "${{ imageFrom(%q, warehouse(%q)).Digest }}" $image $root.Values.project | quote }}
+              {{- end }}
+        {{- end }}
+        {{- end }}
+        {{- end }}
+        - uses: git-commit
+          config:
+            path: ./repo
+            message: Promote {{ $root.Values.project }} to {{ $envName }}
+        - uses: git-push
+          config:
+            path: ./repo
+        # No desiredRevision: every environment tracks the shared branch, so pinning the pushed
+        # commit would mark other environments unhealthy after any later commit.
+        - uses: argocd-update
+          retry: {timeout: 15m}
+          config:
+            apps:
+              {{- range $unitName := $promoted }}
+              - name: {{ $root.Values.project }}-{{ $unitName }}-{{ $envName }}
+                namespace: {{ $root.Values.argoNamespace }}
+              {{- end }}
+        - uses: argocd-wait
+          retry: {timeout: 15m}
+          config:
+            apps:
+              {{- range $unitName := $promoted }}
+              - name: {{ $root.Values.project }}-{{ $unitName }}-{{ $envName }}
+                namespace: {{ $root.Values.argoNamespace }}
+              {{- end }}
 {{- end }}
 {{- end }}
