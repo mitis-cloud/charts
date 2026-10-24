@@ -50,6 +50,7 @@ Removing the release or its Argo CD Application leaves the `Environment` in plac
     privateNetworks: [198.51.100.0/24]
     postgres:                         # shared PostgreSQL instance, needed for databases
       providerConfig: postgres        # provider-sql ClusterProviderConfig with superuser access
+      adminRole: postgres             # the role that provider-sql connects as
       host: postgres.example.internal
       port: 5432
   ```
