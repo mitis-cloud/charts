@@ -23,6 +23,7 @@ spec:
             routing: {{ $env.routing | default "gateway" }}
             charts: {{ toJson $env.charts }}
             layers: {{ toJson ($env.layers | default list) }}
+            externallyScaled: {{ $env.externallyScaled | default false }}
           {{- end }}
           {{- end }}
   # Sources live in the patch: each environment inserts its own layers between the service and its overrides.
@@ -65,26 +66,7 @@ spec:
         - repoURL: {{ $root.Values.git.repository | quote }}
           targetRevision: {{ $root.Values.git.revision | quote }}
           ref: values
-  template:
-    metadata:
-      name: '{{ $root.Values.project }}-{{ $unitName }}-{{ "{{ .environment }}" }}'
-      {{- if include "mitis.delivery.promoted" $unit }}
-      annotations:
-        kargo.akuity.io/authorized-stage: '{{ $root.Values.project }}:{{ $unitName }}-{{ "{{ .environment }}" }}'
-      {{- end }}
-    spec:
-      project: '{{ $root.Values.project }}-{{ "{{ .environment }}" }}'
-      destination:
-        name: '{{ "{{ .cluster }}" }}'
-        namespace: '{{ "{{ .namespace }}" }}'
-      syncPolicy:
-        {{- if not (include "mitis.delivery.promoted" $unit) }}
-        automated: {prune: true, selfHeal: true}
-        {{- end }}
-        syncOptions: [RespectIgnoreDifferences=true]
-        retry:
-          limit: 3
-          backoff: {duration: 5s, factor: 2, maxDuration: 1m}
+      # Lives in the patch so environments can add their own entries.
       ignoreDifferences:
         - group: apps
           kind: Deployment
@@ -111,6 +93,37 @@ spec:
             - /metadata/annotations/understudy.sh~1target-revision
         {{- end }}
         {{- end }}
+        {{ "{{- if .externallyScaled }}" }}
+        # Replica counts belong to the environment's scaler (for example scheduled downscaling), not to Git.
+        {{- range $kind := list "Deployment" "StatefulSet" }}
+        - group: apps
+          kind: {{ $kind }}
+          jsonPointers: [/spec/replicas]
+        {{- end }}
+        - group: argoproj.io
+          kind: Rollout
+          jsonPointers: [/spec/replicas]
+        {{ "{{- end }}" }}
+  template:
+    metadata:
+      name: '{{ $root.Values.project }}-{{ $unitName }}-{{ "{{ .environment }}" }}'
+      {{- if include "mitis.delivery.promoted" $unit }}
+      annotations:
+        kargo.akuity.io/authorized-stage: '{{ $root.Values.project }}:{{ $unitName }}-{{ "{{ .environment }}" }}'
+      {{- end }}
+    spec:
+      project: '{{ $root.Values.project }}-{{ "{{ .environment }}" }}'
+      destination:
+        name: '{{ "{{ .cluster }}" }}'
+        namespace: '{{ "{{ .namespace }}" }}'
+      syncPolicy:
+        {{- if not (include "mitis.delivery.promoted" $unit) }}
+        automated: {prune: true, selfHeal: true}
+        {{- end }}
+        syncOptions: [RespectIgnoreDifferences=true]
+        retry:
+          limit: 3
+          backoff: {duration: 5s, factor: 2, maxDuration: 1m}
 {{- end }}
 {{- range $envName, $env := .Values.environments }}
 ---
@@ -119,6 +132,9 @@ kind: AppProject
 metadata:
   name: {{ $root.Values.project }}-{{ $envName }}
   namespace: {{ $root.Values.argoNamespace }}
+  annotations:
+    # Applications are rejected until their project exists.
+    argocd.argoproj.io/sync-wave: '-10'
 spec:
   sourceRepos:
     - {{ $root.Values.git.repository | quote }}

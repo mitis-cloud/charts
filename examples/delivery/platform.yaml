@@ -8,6 +8,7 @@ environments:
     charts: {service: 0.1.0, environment: 0.1.0, proxy: 1.0.0}
     promotion: automatic
     layers: [stages/test.yaml]
+    externallyScaled: true
     environment:
       maintenance:
         hostnames: [api.example-test.invalid]

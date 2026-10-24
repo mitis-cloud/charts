@@ -24,6 +24,7 @@
         "promotion": {"enum": ["manual", "automatic"]},
         "units": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/definitions/name"}},
         "routing": {"enum": ["ingress", "gateway"]},
+        "externallyScaled": {"type": "boolean", "description": "Replica counts are changed outside Git, for example by scheduled downscaling; Argo ignores them."},
         "layers": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-zA-Z0-9_-][a-zA-Z0-9_/-]*\\.yaml$"}, "description": "Repository-relative values files applied to every service between its definition and the environment's own files, in order."},
         "environment": {"type": "object", "description": "Values for the environment chart, deployed and synchronized automatically. Requires the environment chart pin; the namespace comes from the environment."}
       }
