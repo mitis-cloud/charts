@@ -30,6 +30,42 @@ spec:
         source: Inline
         inline:
           template: |
+            {{- define "function-code" -}}
+            function handler(event) {
+                var request = event.request;
+                var uri = request.uri;
+                var maintenanceEnabled = {{ .maintenance }};
+
+                if (maintenanceEnabled) {
+                    return {
+                        statusCode: 503,
+                        statusDescription: 'Service Unavailable',
+                        body: {{ .body }}
+                    };
+                }
+
+                if (uri.endsWith('/')) {
+                    uri = uri.slice(0, -1);
+                }
+
+                // Single-page application: anything that is not a file is the application.
+                if (decodeURIComponent(uri).includes(':') || !uri.includes('.')) {
+                    uri = '/index.html';
+                }
+
+                // SAML identity providers finish with a POST, which a static site cannot accept.
+                if (request.method === "POST") {
+                    return {
+                        statusCode: 302,
+                        statusDescription: 'Found',
+                        headers: {"location": {"value": "/"}}
+                    };
+                }
+
+                request.uri = uri;
+                return request;
+            }
+            {{- end }}
             {{- $xr := .observed.composite.resource }}
             {{- $ns := $xr.metadata.namespace }}
             {{- $name := $xr.metadata.name }}
@@ -105,6 +141,7 @@ spec:
               forProvider:
                 comment: OAI to restrict access to AWS S3 content
             {{- if $application }}
+            {{- $code := include "function-code" (dict "maintenance" (dig "maintenance" "enabled" false $spec) "body" (dig "maintenance" "body" "Service under maintenance." $spec | toJson)) }}
             ---
             apiVersion: v1
             kind: Secret
@@ -115,41 +152,7 @@ spec:
                 gotemplating.fn.crossplane.io/composition-resource-name: function-code
                 gotemplating.fn.crossplane.io/ready: "True"
             stringData:
-              code: |
-                function handler(event) {
-                    var request = event.request;
-                    var uri = request.uri;
-                    var maintenanceEnabled = {{ dig "maintenance" "enabled" false $spec }};
-
-                    if (maintenanceEnabled) {
-                        return {
-                            statusCode: 503,
-                            statusDescription: 'Service Unavailable',
-                            body: {{ dig "maintenance" "body" "Service under maintenance." $spec | toJson }}
-                        };
-                    }
-
-                    if (uri.endsWith('/')) {
-                        uri = uri.slice(0, -1);
-                    }
-
-                    // Single-page application: anything that is not a file is the application.
-                    if (decodeURIComponent(uri).includes(':') || !uri.includes('.')) {
-                        uri = '/index.html';
-                    }
-
-                    // SAML identity providers finish with a POST, which a static site cannot accept.
-                    if (request.method === "POST") {
-                        return {
-                            statusCode: 302,
-                            statusDescription: 'Found',
-                            headers: {"location": {"value": "/"}}
-                        };
-                    }
-
-                    request.uri = uri;
-                    return request;
-                }
+              code: {{ $code | toJson }}
             ---
             apiVersion: cloudfront.aws.m.upbound.io/v1beta1
             kind: Function
@@ -161,6 +164,8 @@ spec:
                 crossplane.io/external-name: {{ $function }}
             spec:
               forProvider:
+                # The provider does not watch the code Secret: a code change must also change the spec.
+                comment: code {{ $code | sha256sum | trunc 16 }}
                 runtime: cloudfront-js-2.0
                 publish: true
                 codeSecretRef:

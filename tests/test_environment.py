@@ -275,7 +275,11 @@ class AwsWebappComposition(unittest.TestCase):
         self.assertEqual(distribution["defaultCacheBehavior"]["functionAssociation"][0]["functionArn"], "arn:aws:cloudfront::000000000000:function/legacy-portal-function")
         self.assertEqual(docs["record-a"]["spec"]["forProvider"]["zoneId"], "Z0000000000NESTED")
         self.assertEqual(docs["validation"]["spec"]["forProvider"]["name"], "_abc.portal.app.example.invalid")
-        self.assertIn("maintenanceEnabled = false", docs["function-code"]["stringData"]["code"])
+        code = docs["function-code"]["stringData"]["code"]
+        self.assertIn("var maintenanceEnabled = false;", code)
+        self.assertTrue(code.startswith("function handler(event) {"))
+        # A code change is a spec change, so the provider applies it at once.
+        self.assertTrue(docs["function"]["spec"]["forProvider"]["comment"].startswith("code "))
 
     def test_files_mode_has_no_function_and_caches_everything(self):
         xr = yaml.safe_load((ROOT / "examples/crossplane/webapp.yaml").read_text())
