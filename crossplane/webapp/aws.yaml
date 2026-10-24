@@ -55,6 +55,7 @@ spec:
             {{- $functionArn := dig "function" "resource" "status" "atProvider" "arn" "" $observed }}
             {{- $distribution := dig "distribution" "resource" "status" "atProvider" dict $observed }}
             {{- $tags := dict "Name" (printf "%s-%s-website" $ns $name) }}
+            {{- $application := ne ($spec.mode | default "application") "files" }}
             {{- $s3 := list }}
             {{- range $prefix, $target := dict "website" $bucket "logs" $logs }}
             {{- $s3 = append $s3 (dict "kind" "BucketOwnershipControls" "id" (printf "%s-ownership" $prefix) "forProvider" (dict "bucket" $target "rule" (dict "objectOwnership" "BucketOwnerPreferred"))) }}
@@ -103,6 +104,7 @@ spec:
             spec:
               forProvider:
                 comment: OAI to restrict access to AWS S3 content
+            {{- if $application }}
             ---
             apiVersion: v1
             kind: Secret
@@ -164,6 +166,7 @@ spec:
                 codeSecretRef:
                   name: {{ $name }}-function-code
                   key: code
+            {{- end }}
             ---
             apiVersion: acm.aws.m.upbound.io/v1beta1
             kind: Certificate
@@ -204,7 +207,7 @@ spec:
                 ttl: 60
                 allowOverwrite: true
             {{- end }}
-            {{- if and $identity.cloudfrontAccessIdentityPath $functionArn $certificate.arn }}
+            {{- if and $identity.cloudfrontAccessIdentityPath (or $functionArn (not $application)) $certificate.arn }}
             ---
             apiVersion: cloudfront.aws.m.upbound.io/v1beta1
             kind: Distribution
@@ -241,17 +244,19 @@ spec:
                 defaultCacheBehavior:
                   targetOriginId: {{ $bucket }}
                   viewerProtocolPolicy: redirect-to-https
-                  # Managed-CachingDisabled and Managed-CORS-S3Origin.
-                  cachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+                  # Managed-CachingDisabled for applications, Managed-CachingOptimized for files; Managed-CORS-S3Origin.
+                  cachePolicyId: {{ ternary "4135ea2d-6df8-44a3-9df3-4b5a84be39ad" "658327ea-f89d-4fab-a63d-7e88639e58f6" $application }}
                   originRequestPolicyId: 88a5eaf4-2fd4-4709-b370-b4c650ea3fcf
                   compress: false
                   allowedMethods: [GET, HEAD]
                   cachedMethods: [GET, HEAD]
+                  {{- if $application }}
                   functionAssociation:
                     - eventType: viewer-request
                       functionArn: {{ $functionArn }}
+                  {{- end }}
                 orderedCacheBehavior:
-                  {{- range $path := $spec.cachedPaths | default (list "/assets/*") }}
+                  {{- range $path := ternary ($spec.cachedPaths | default (list "/assets/*")) list $application }}
                   - pathPattern: {{ $path | quote }}
                     targetOriginId: {{ $bucket }}
                     viewerProtocolPolicy: redirect-to-https
