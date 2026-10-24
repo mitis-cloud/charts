@@ -257,8 +257,12 @@ spec:
                     - eventType: viewer-request
                       functionArn: {{ $functionArn }}
                   {{- end }}
+                {{- $cached := ternary ($spec.cachedPaths | default (list "/assets/*")) list $application }}
+                {{- if not $cached }}
+                orderedCacheBehavior: []
+                {{- else }}
                 orderedCacheBehavior:
-                  {{- range $path := ternary ($spec.cachedPaths | default (list "/assets/*")) list $application }}
+                  {{- range $path := $cached }}
                   - pathPattern: {{ $path | quote }}
                     targetOriginId: {{ $bucket }}
                     viewerProtocolPolicy: redirect-to-https
@@ -269,6 +273,7 @@ spec:
                     allowedMethods: [GET, HEAD]
                     cachedMethods: [GET, HEAD]
                   {{- end }}
+                {{- end }}
                 restrictions:
                   geoRestriction:
                     restrictionType: none
