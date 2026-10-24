@@ -27,9 +27,14 @@ spec:
                   x-kubernetes-validations:
                     - rule: self == oldSelf
                       message: A webapp cannot change hostname.
+                mode:
+                  type: string
+                  description: application routes every non-file path to the single-page application, answers maintenance and caches only cachedPaths; files serves stored files as they are, all cached, and ignores maintenance.
+                  enum: [application, files]
+                  default: application
                 cachedPaths:
                   type: array
-                  description: Path patterns served with long-lived caching; everything else is never cached.
+                  description: Path patterns served with long-lived caching; everything else is never cached (application mode).
                   default: ["/assets/*"]
                   items: {type: string}
                 maintenance:

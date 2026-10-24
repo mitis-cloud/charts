@@ -255,6 +255,12 @@
             "items": {
               "type": "string"
             }
+          },
+          "mode": {
+            "enum": [
+              "application",
+              "files"
+            ]
           }
         }
       }

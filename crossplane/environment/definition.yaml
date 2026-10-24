@@ -117,6 +117,7 @@ spec:
                     required: [hostname]
                     properties:
                       hostname: {type: string}
+                      mode: {type: string, enum: [application, files]}
                       cachedPaths:
                         type: array
                         items: {type: string}

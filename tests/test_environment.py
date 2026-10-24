@@ -277,6 +277,25 @@ class AwsWebappComposition(unittest.TestCase):
         self.assertEqual(docs["validation"]["spec"]["forProvider"]["name"], "_abc.portal.app.example.invalid.")
         self.assertIn("maintenanceEnabled = false", docs["function-code"]["stringData"]["code"])
 
+    def test_files_mode_has_no_function_and_caches_everything(self):
+        xr = yaml.safe_load((ROOT / "examples/crossplane/webapp.yaml").read_text())
+        xr["spec"]["mode"] = "files"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "xr.yaml"
+            path.write_text(yaml.safe_dump(xr))
+            result = subprocess.run(
+                ["crossplane", "render", str(path), str(self.composition), str(FIXTURES / "functions.yaml"),
+                 "--required-resources", str(FIXTURES / "platform-aws.yaml"),
+                 "--observed-resources", str(FIXTURES / "webapp-observed.yaml")],
+                text=True, capture_output=True, check=True,
+            )
+        docs = {d["metadata"]["annotations"]["crossplane.io/composition-resource-name"]: d for d in documents(result.stdout)[1:]}
+        self.assertNotIn("function", docs)
+        behavior = docs["distribution"]["spec"]["forProvider"]["defaultCacheBehavior"]
+        self.assertEqual(behavior["cachePolicyId"], "658327ea-f89d-4fab-a63d-7e88639e58f6")
+        self.assertNotIn("functionAssociation", behavior)
+        self.assertFalse(docs["distribution"]["spec"]["forProvider"]["orderedCacheBehavior"])
+
 
 if __name__ == "__main__":
     unittest.main()

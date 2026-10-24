@@ -170,6 +170,9 @@ spec:
                 gotemplating.fn.crossplane.io/composition-resource-name: webapp-{{ $name }}
             spec:
               hostname: {{ $webapp.hostname }}
+              {{- with $webapp.mode }}
+              mode: {{ . }}
+              {{- end }}
               {{- with $webapp.cachedPaths }}
               cachedPaths: {{ toJson . }}
               {{- end }}
