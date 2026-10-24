@@ -200,6 +200,15 @@ class PostgresDatabaseComposition(unittest.TestCase):
         }
         self.assertEqual(targets, {"example-backend-group-admin", "example-backend-migrator"})
         self.assertNotIn("example-backend-schema-public", docs)
+        self.assertEqual(
+            docs["example-backend-provider-membership"]["spec"]["forProvider"],
+            {"role": "platform_admin", "memberOf": "example-backend-group-admin"},
+        )
+        self.assertEqual(
+            docs["example-backend-provider-membership-migrator"]["spec"]["forProvider"]["memberOf"],
+            "example-backend-migrator",
+        )
+        self.assertNotIn("example-backend-provider-membership-api", docs)
 
     def test_passwords_are_published_only_when_absent(self):
         docs = self.by_name(self.composed())

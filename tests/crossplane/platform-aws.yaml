@@ -16,5 +16,6 @@ data:
   privateNetworks: [198.51.100.0/24]
   postgres:
     providerConfig: postgres
+    adminRole: platform_admin
     host: postgres.example.invalid
     port: 5432
