@@ -748,6 +748,28 @@ class DeliveryContract(unittest.TestCase):
             success=False,
         )
 
+    def test_units_without_images_are_configuration(self):
+        docs = render(self.chart, self.example)
+        self.assertFalse(
+            [d for d in docs if d["kind"] in ["Warehouse", "Stage", "PromotionTask"] and "edge" in d["metadata"]["name"]]
+        )
+        policies = resource(docs, "ProjectConfig")["spec"]["promotionPolicies"]
+        self.assertFalse([p for p in policies if p["stageSelector"]["name"].startswith("edge-")])
+        edge = resource(docs, "ApplicationSet", "example-edge")["spec"]["template"]
+        self.assertTrue(edge["spec"]["syncPolicy"]["automated"]["selfHeal"])
+        self.assertNotIn("annotations", edge["metadata"])
+        backend = resource(docs, "ApplicationSet", "example-backend")["spec"]["template"]
+        self.assertNotIn("automated", backend["spec"]["syncPolicy"])
+
+    def test_shared_values_reach_only_service_chart_sources(self):
+        docs = render(self.chart, self.example)
+        proxy = self.expanded_sources(docs, "edge", "test")[0]
+        self.assertEqual(
+            proxy["helm"]["valueFiles"],
+            ["$values/services/edge-proxy.yaml", "$values/environments/test/edge-proxy.yaml"],
+        )
+        self.assertNotIn("parameters", proxy["helm"])
+
     def test_environment_values_deploy_the_environment_chart(self):
         docs = render(self.chart, self.example)
         app = resource(docs, "Application", "example-test-environment")

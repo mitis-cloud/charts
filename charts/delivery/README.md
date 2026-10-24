@@ -26,7 +26,7 @@ See [the complete example](../../examples/delivery/platform.yaml) and [values.sc
 
 The default `charts.service` points at `ghcr.io/mitis-cloud/charts`, chart `service`, and root scope `['']`; the default `charts.environment` points at the [environment chart](../environment/README.md). For an OCI Helm source, Argo's chart `repoURL` omits `oci://`; register it with Argo as an OCI-enabled Helm repository. Chart versions come from each environment, independently of images and the delivery chart's version.
 
-`serviceScopes` identifies where a source's values reach the service chart. The default `['']` covers a direct `service` source. Use an empty list for a direct vendor chart. A product chart that embeds `service` as a dependency lists its aliases, e.g. `[helpers]`. Delivery sets only the finite `render.engine`, `render.part`, and `render.routing` parameters at those scopes. Ordinary first-party values stay at the root.
+`serviceScopes` identifies where a source's values reach the service chart. Environment layers and `defaults.yaml` reach only sources whose scopes include the root (`''`): other charts get just their service file and environment file. The default `['']` covers a direct `service` source. Use an empty list for a direct vendor chart. A product chart that embeds `service` as a dependency lists its aliases, e.g. `[helpers]`. Delivery sets only the finite `render.engine`, `render.part`, and `render.routing` parameters at those scopes. Ordinary first-party values stay at the root.
 
 ### Environments
 
@@ -51,7 +51,7 @@ Names do not infer edges, create missing environments, or impose tenant/stage di
 - `chart`: a key in `charts`.
 - `releaseName`: optional Helm release identity; defaults to the service key.
 - `order`: coordinated-service slot (0–100, default 0); a later service waits for earlier slots' after-jobs within the Application.
-- `images`: values paths mapped to image repositories, e.g. `image.digest: ghcr.io/example/backend`. Wrapper paths may be nested. A unit Warehouse subscribes once per unique repository.
+- `images`: values paths mapped to image repositories, e.g. `image.digest: ghcr.io/example/backend`. Wrapper paths may be nested. A unit Warehouse subscribes once per unique repository. A unit where no service declares images is configuration: no Kargo resources, and its Applications sync automatically.
 - `allowTags` (unit level, beside `services`): image-tag regular expression for this unit's Warehouse, overriding `discovery.allowTags`, for example `^[0-9a-f]{7}$` for commit tags. Warehouses select the newest build among matching tags.
 - `capacityTargets`: exact `{name, kind}` references for Understudy-managed Deployment/Rollout replicas. This declares field ownership for Argo, not capacity values. Match it to the service's actual protection resources and keep it absent for unprotected targets.
 
