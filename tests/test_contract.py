@@ -683,6 +683,15 @@ class DeliveryContract(unittest.TestCase):
         ignores = self.expanded_spec(docs, "worker", "production")["ignoreDifferences"]
         self.assertFalse(any("/spec/replicas" in rule.get("jsonPointers", []) for rule in ignores))
 
+    def test_stage_colors_follow_the_first_matching_rule(self):
+        rules = {"stageColors": [{"match": "^prod", "color": "red"}, {"match": "^(test|prod)", "color": "green"}]}
+        stages = {d["metadata"]["name"]: d for d in render(self.chart, self.example, rules) if d["kind"] == "Stage"}
+        color = lambda s: s["metadata"].get("annotations", {}).get("kargo.akuity.io/color")
+        self.assertEqual(color(stages["test"]), "green")
+        self.assertEqual(color(stages["production"]), "red")
+        unmatched = render(self.chart, self.example, {"stageColors": [{"match": "^staging", "color": "yellow"}]})
+        self.assertTrue(all("annotations" not in d["metadata"] for d in unmatched if d["kind"] == "Stage"))
+
     def test_warehouse_uses_supported_tag_selection(self):
         # Kargo >= 1.11 rejects the deprecated allowTags field at discovery time.
         docs = render(self.chart, self.example)

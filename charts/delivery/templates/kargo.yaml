@@ -49,12 +49,20 @@ spec:
 {{- range $envName, $env := .Values.environments }}
 {{- $promoted := include "mitis.delivery.promotedUnits" (dict "root" $root "env" $env) | fromJsonArray }}
 {{- if $promoted }}
+{{- $color := "" }}
+{{- range $rule := $root.Values.stageColors }}
+{{- if and (not $color) (regexMatch $rule.match $envName) }}{{ $color = $rule.color }}{{ end }}
+{{- end }}
 ---
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Stage
 metadata:
   name: {{ $envName }}
   namespace: {{ $root.Values.project }}
+  {{- with $color }}
+  annotations:
+    kargo.akuity.io/color: {{ . | quote }}
+  {{- end }}
 spec:
   requestedFreight:
     - origin: {kind: Warehouse, name: {{ $root.Values.project }}}
