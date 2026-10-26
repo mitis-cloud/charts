@@ -41,7 +41,7 @@ Optional `layers` lists repository-relative values files, such as `stages/test.y
 
 Optional `environment` holds [environment chart](../environment/README.md) values: exposures, isolation and the maintenance switch. The chart then renders an Argo CD Application for the environment, synchronized automatically because it is configuration rather than a promoted release, and the environment needs a `charts.environment` pin. Its namespace is the environment's `namespace`. The AppProject then also permits the cluster-scoped `Environment`.
 
-Optional `externallyScaled: true` declares that replica counts change outside Git, for example through scheduled downscaling: Argo ignores `spec.replicas` on Deployments, StatefulSets and Rollouts there, so automatic synchronization does not fight the scaler.
+Optional `externallyScaled: true` declares that replica counts change outside Git, for example through scheduled downscaling: Argo ignores `spec.replicas` on Deployments, StatefulSets and Rollouts there, so automatic synchronization does not fight the scaler, and service-chart sources get `render.capacity: external` so their Understudy baseline doesn't either (requires service chart 0.3.1 or later).
 
 Optional `units` selects which defined release units exist there; omission selects all. `upstream` is a list of predecessor environment names. An empty list means direct discovery from the project Warehouse. `promotion` is `manual` (default) or `automatic`. `routing` is `gateway` (default) or `ingress`.
 

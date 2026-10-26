@@ -60,6 +60,10 @@ spec:
                 value: '{{ "{{ .routing }}" }}'
               - name: {{ $prefix }}render.order
                 value: {{ $service.order | default 0 | quote }}
+              {{ "{{- if .externallyScaled }}" }}
+              - name: {{ $prefix }}render.capacity
+                value: external
+              {{ "{{- end }}" }}
               {{- end }}
             {{- end }}
         {{- end }}

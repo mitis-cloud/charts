@@ -629,6 +629,13 @@ class ServiceContract(unittest.TestCase):
         render(self.chart, path, before, success=False)
         render(self.chart, path, before, {"render": {"part": "runtime"}})
 
+    def test_external_capacity_leaves_the_understudy_baseline_to_the_scaler(self):
+        canary = ROOT / "examples/service/canary.yaml"
+        pinned = render(self.chart, canary, {"render": {"engine": "argo"}})
+        self.assertIn("baselineReplicas", resource(pinned, "Understudy")["spec"])
+        external = render(self.chart, canary, {"render": {"engine": "argo", "capacity": "external"}})
+        self.assertNotIn("baselineReplicas", resource(external, "Understudy")["spec"])
+
     def test_canary_has_initial_smoke_and_scoped_capacity(self):
         docs = render(self.chart, ROOT / "examples/service/canary.yaml")
         rollout = resource(docs, "Rollout")
@@ -755,6 +762,9 @@ class DeliveryContract(unittest.TestCase):
         self.assertEqual({r["kind"] for r in replicas(test)}, {"Deployment", "StatefulSet", "Rollout"})
         self.assertTrue(any(r.get("name") == "api" for r in test["ignoreDifferences"]))
         self.assertFalse(replicas(self.expanded_spec(docs, "backend", "production")))
+        capacity = lambda env: [p["value"] for p in self.expanded_sources(docs, "backend", env)[0]["helm"]["parameters"] if p["name"] == "render.capacity"]
+        self.assertEqual(capacity("test"), ["external"])
+        self.assertEqual(capacity("production"), [])
         project = resource(docs, "AppProject", "example-test")
         self.assertEqual(project["metadata"]["annotations"]["argocd.argoproj.io/sync-wave"], "-10")
 

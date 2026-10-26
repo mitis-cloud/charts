@@ -80,7 +80,8 @@ spec:
   targetRef:
     kind: {{ ternary "Rollout" "Deployment" $canary }}
     name: {{ $name }}
-  {{- if eq .Values.render.engine "argo" }}
+  {{- /* Git owns capacity unless an external scaler does; then the baseline follows the live replicas, as in Helm mode. */}}
+  {{- if and (eq .Values.render.engine "argo") (ne .Values.render.capacity "external") }}
   baselineReplicas: {{ .Values.capacity.instances }}
   {{- end }}
   surgeReplicas: 1
