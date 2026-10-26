@@ -33,3 +33,4 @@ render:
   routing: ingress
   order: 0
   task: ''
+  capacity: git

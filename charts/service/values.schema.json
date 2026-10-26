@@ -107,7 +107,8 @@
         "part": {"enum": ["all", "inputs", "runtime", "application", "scheduled", "task"]},
         "routing": {"enum": ["ingress", "gateway"]},
         "order": {"type": "integer", "minimum": 0, "maximum": 100, "description": "Native Argo ordering between coordinated services; each slot contains inputs, before-jobs, runtime, and after-jobs."},
-        "task": {"type": "string"}
+        "task": {"type": "string"},
+        "capacity": {"enum": ["git", "external"], "description": "Who owns replica counts in Argo mode: git pins the Understudy baseline; external lets a scaler own them."}
       }, "description": "Finite orchestration selectors; every part must have a stable owner. Do not switch parts on an existing Helm release."
     },
     "global": {"type": "object", "additionalProperties": false, "description": "Helm injects an empty global object into dependencies. No public fields are accepted here."}
