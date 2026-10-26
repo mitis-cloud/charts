@@ -51,6 +51,7 @@ metadata:
 status:
   atProvider:
     id: E1EXAMPLEDIST
+    arn: arn:aws:cloudfront::000000000000:distribution/E1EXAMPLEDIST
     domainName: d111111abcdef8.cloudfront.net
 ---
 apiVersion: s3.aws.m.upbound.io/v1beta1

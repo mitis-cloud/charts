@@ -15,6 +15,8 @@ data:
       inboundCIDRs: [192.0.2.0/24]
   privateNetworks: [198.51.100.0/24]
   region: eu-west-1
+  cluster:
+    name: example-cluster
   dns:
     zones:
       example.invalid: Z0000000000EXAMPLE
