@@ -20,6 +20,7 @@ See [the complete example](../../examples/delivery/platform.yaml) and [values.sc
 | `charts` | Named chart definitions: `repository`, chart `name`, and optional `serviceScopes`. |
 | `environments` | Named deployment targets with cluster, namespace, chart pins, and explicit promotion relationships. |
 | `releaseUnits` | Named groups of services with chart selection, promoted image paths, and explicit delegated-capacity targets. |
+| `stageColors` | Ordered `{match, color}` rules; the first `match` regular expression matching an environment name colors its Stage in the Kargo UI. `color` is a Kargo palette name (e.g. `green`, `yellow`, `red`, `violet`) or a `#rrggbb` hex value. |
 | `discovery.interval` | Warehouse refresh interval, default `5m`. |
 | `discovery.allowTags` | Allowed image-tag regular expression; default semantic release tags, optionally prefixed `v`. |
 | `discovery.limit` | Discovery history limit, default 20. |
