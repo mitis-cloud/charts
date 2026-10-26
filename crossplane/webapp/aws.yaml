@@ -344,6 +344,63 @@ spec:
                 - match: {secretKey: bucket, remoteRef: {remoteKey: {{ $spec.outputs.key }}-website-bucket-id}}
                 - match: {secretKey: distribution, remoteRef: {remoteKey: {{ $spec.outputs.key }}-cloudfront-website-id}}
             {{- end }}
+            {{- /* The publisher identity lets a deployment job upload the site and invalidate its cache, and nothing else. */}}
+            {{- $publisher := printf "%s-publisher" $name }}
+            ---
+            apiVersion: v1
+            kind: ServiceAccount
+            metadata:
+              name: {{ $publisher }}
+              namespace: {{ $ns }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: publisher-account
+                gotemplating.fn.crossplane.io/ready: "True"
+            automountServiceAccountToken: false
+            ---
+            apiVersion: iam.aws.m.upbound.io/v1beta1
+            kind: Role
+            metadata:
+              name: {{ $publisher }}
+              namespace: {{ $ns }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: publisher-role
+                crossplane.io/external-name: {{ printf "%s-%s" $ns $publisher }}
+            spec:
+              forProvider:
+                assumeRolePolicy: {{ dict "Version" "2012-10-17" "Statement" (list (dict "Effect" "Allow" "Principal" (dict "Service" "pods.eks.amazonaws.com") "Action" (list "sts:AssumeRole" "sts:TagSession"))) | toJson | quote }}
+                tags: {{ $tags | toJson }}
+            {{- with $distribution.arn }}
+            ---
+            apiVersion: iam.aws.m.upbound.io/v1beta1
+            kind: RolePolicy
+            metadata:
+              name: {{ $publisher }}
+              namespace: {{ $ns }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: publisher-policy
+            spec:
+              forProvider:
+                roleRef: {name: {{ $publisher }}}
+                policy: {{ dict "Version" "2012-10-17" "Statement" (list
+                  (dict "Effect" "Allow" "Action" "s3:ListBucket" "Resource" (printf "arn:aws:s3:::%s" $bucket))
+                  (dict "Effect" "Allow" "Action" (list "s3:GetObject" "s3:PutObject" "s3:DeleteObject") "Resource" (printf "arn:aws:s3:::%s/*" $bucket))
+                  (dict "Effect" "Allow" "Action" (list "cloudfront:CreateInvalidation" "cloudfront:GetInvalidation") "Resource" .)) | toJson | quote }}
+            {{- end }}
+            ---
+            apiVersion: eks.aws.m.upbound.io/v1beta1
+            kind: PodIdentityAssociation
+            metadata:
+              name: {{ $publisher }}
+              namespace: {{ $ns }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: publisher-identity
+            spec:
+              forProvider:
+                region: {{ $region }}
+                clusterName: {{ $platform.cluster.name }}
+                namespace: {{ $ns }}
+                serviceAccount: {{ $publisher }}
+                roleArnRef: {name: {{ $publisher }}}
     - step: ready
       functionRef:
         name: crossplane-contrib-function-auto-ready

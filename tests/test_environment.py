@@ -281,6 +281,23 @@ class AwsWebappComposition(unittest.TestCase):
         # A code change is a spec change, so the provider applies it at once.
         self.assertTrue(docs["function"]["spec"]["forProvider"]["comment"].startswith("code "))
 
+    def test_publisher_may_only_upload_and_invalidate_its_own_site(self):
+        first = self.composed()
+        self.assertNotIn("publisher-policy", first)
+        docs = self.composed("webapp-observed.yaml")
+        self.assertEqual(docs["publisher-account"]["metadata"]["name"], "portal-publisher")
+        self.assertEqual(docs["publisher-role"]["metadata"]["annotations"]["crossplane.io/external-name"], "example-portal-publisher")
+        trust = json.loads(docs["publisher-role"]["spec"]["forProvider"]["assumeRolePolicy"])["Statement"][0]
+        self.assertEqual(trust["Principal"], {"Service": "pods.eks.amazonaws.com"})
+        policy = json.loads(docs["publisher-policy"]["spec"]["forProvider"]["policy"])["Statement"]
+        self.assertEqual(
+            [s["Resource"] for s in policy],
+            ["arn:aws:s3:::portal.app.example.invalid", "arn:aws:s3:::portal.app.example.invalid/*", "arn:aws:cloudfront::000000000000:distribution/E1EXAMPLEDIST"],
+        )
+        identity = docs["publisher-identity"]["spec"]["forProvider"]
+        self.assertEqual((identity["clusterName"], identity["namespace"], identity["serviceAccount"]), ("example-cluster", "example", "portal-publisher"))
+        self.assertEqual(identity["roleArnRef"], {"name": "portal-publisher"})
+
     def test_files_mode_has_no_function_and_caches_everything(self):
         xr = yaml.safe_load((ROOT / "examples/crossplane/webapp.yaml").read_text())
         xr["spec"]["mode"] = "files"
