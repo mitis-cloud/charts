@@ -24,7 +24,6 @@ See [the complete example](../../examples/delivery/platform.yaml) and [values.sc
 | `discovery.interval` | Warehouse refresh interval, default `5m`. |
 | `discovery.allowTags` | Allowed image-tag regular expression; default semantic release tags, optionally prefixed `v`. |
 | `discovery.limit` | Discovery history limit, default 20. |
-| `discovery.criteria` | Optional Freight creation criteria: a Kargo expression every new Freight must satisfy, for example that builds and the Git commit their configuration comes from share a tag. |
 
 The default `charts.service` points at `ghcr.io/mitis-cloud/charts`, chart `service`, and root scope `['']`; the default `charts.environment` points at the [environment chart](../environment/README.md). For an OCI Helm source, Argo's chart `repoURL` omits `oci://`; register it with Argo as an OCI-enabled Helm repository. Chart versions come from each environment, independently of images and the delivery chart's version.
 
@@ -57,6 +56,7 @@ Names do not infer edges, create missing environments, or impose tenant/stage di
 - `order`: coordinated-service slot (0–100, default 0); a later service waits for earlier slots' after-jobs within the Application.
 - `images`: values paths mapped to image repositories, e.g. `image.digest: ghcr.io/example/backend`. Wrapper paths may be nested. The project Warehouse subscribes once per unique repository. A unit where no service declares images is configuration: Kargo does not promote it, and its Applications sync automatically.
 - `gitValues` (service level): top-level values filled at promotion from files in Git repositories, as `<key>: {repository, path, branch, expression}`. The project Warehouse follows each repository's branch (default `main`). Promotion checks the repository out at the Freight's commit, parses the JSON or YAML file at `path` (which may use `${{ vars.<name> }}`) and optionally narrows it with an expr-lang `expression` (the whole file by default). A service with `gitValues` owns its environment file: promotion rewrites `<environment>/<service>.yaml` whole with those values, then sets its image digests there, so keys removed at the source disappear. The file carries no comment (Kargo writes `asYAML()` output verbatim only when nothing surrounds it), so say so in the service file. Keep anything hand-written in the service file or `defaults.yaml`, not in that environment file.
+- `criteria` (unit level): Freight creation criteria for the unit's Warehouse, a Kargo expression every new Freight must satisfy, for example that its builds and the Git commit their configuration comes from share a tag.
 - `allowTags` (unit level, beside `services`): image-tag regular expression for this unit's images, overriding `discovery.allowTags`, for example `^[0-9a-f]{7}$` for commit tags. The newest build among matching tags is selected. An image shared by two units must use the same filter.
 - `capacityTargets`: exact `{name, kind}` references for Understudy-managed Deployment/Rollout replicas. This declares field ownership for Argo, not capacity values. Match it to the service's actual protection resources and keep it absent for unprotected targets.
 

@@ -19,39 +19,29 @@ spec:
       autoPromotionEnabled: {{ eq ($env.promotion | default "manual") "automatic" }}
     {{- end }}
     {{- end }}
-{{- /* One Warehouse per project: each Freight is the project's complete set of images. */}}
-{{- $repos := dict }}
+{{- /* One Warehouse per promoted release unit: each Freight is one unit's images and Git sources. */}}
 {{- range $unitName, $unit := .Values.releaseUnits }}
-{{- range $service := $unit.services }}
-{{- range $image := $service.images }}
-{{- if not (hasKey $repos $image) }}{{ $_ := set $repos $image ($unit.allowTags | default $root.Values.discovery.allowTags) }}{{ end }}
-{{- end }}
-{{- end }}
-{{- end }}
-{{- /* Git repositories whose files promote into values, by branch. */}}
+{{- if include "mitis.delivery.promoted" $unit }}
+{{- $repos := dict }}
 {{- $sources := dict }}
-{{- range $unit := .Values.releaseUnits }}
 {{- range $service := $unit.services }}
-{{- range $value := $service.gitValues }}
-{{- $_ := set $sources $value.repository ($value.branch | default "main") }}
+{{- range $image := $service.images }}{{ $_ := set $repos $image true }}{{ end }}
+{{- range $value := $service.gitValues }}{{ $_ := set $sources $value.repository ($value.branch | default "main") }}{{ end }}
 {{- end }}
-{{- end }}
-{{- end }}
-{{- if or $repos $sources }}
 ---
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Warehouse
 metadata:
-  name: {{ .Values.project }}
-  namespace: {{ .Values.project }}
+  name: {{ $unitName }}
+  namespace: {{ $root.Values.project }}
 spec:
-  interval: {{ .Values.discovery.interval }}
+  interval: {{ $root.Values.discovery.interval }}
   subscriptions:
     {{- range $image := keys $repos | sortAlpha }}
     - image:
         repoURL: {{ $image | quote }}
         imageSelectionStrategy: NewestBuild
-        allowTagsRegexes: [{{ index $repos $image | quote }}]
+        allowTagsRegexes: [{{ $unit.allowTags | default $root.Values.discovery.allowTags | quote }}]
         discoveryLimit: {{ $root.Values.discovery.limit }}
     {{- end }}
     {{- range $repository := keys $sources | sortAlpha }}
@@ -61,10 +51,11 @@ spec:
         commitSelectionStrategy: NewestFromBranch
         discoveryLimit: {{ $root.Values.discovery.limit }}
     {{- end }}
-  {{- with $root.Values.discovery.criteria }}
+  {{- with $unit.criteria }}
   freightCreationCriteria:
     expression: {{ . | quote }}
   {{- end }}
+{{- end }}
 {{- end }}
 {{- range $envName, $env := .Values.environments }}
 {{- $promoted := include "mitis.delivery.promotedUnits" (dict "root" $root "env" $env) | fromJsonArray }}
@@ -84,23 +75,17 @@ metadata:
     kargo.akuity.io/color: {{ . | quote }}
   {{- end }}
 spec:
+  {{- /* One slot per unit the environment runs: a promotion moves one unit's Freight. */}}
   requestedFreight:
-    - origin: {kind: Warehouse, name: {{ $root.Values.project }}}
+    {{- range $unitName := $promoted }}
+    - origin: {kind: Warehouse, name: {{ $unitName }}}
       sources:
         {{- if $env.upstream }}
         stages: {{ toJson $env.upstream }}
         {{- else }}
         direct: true
         {{- end }}
-  {{- /* Repositories this environment's promoted units read values from, checked out at the Freight's commit. */}}
-  {{- $checkouts := dict }}
-  {{- range $unitName := $promoted }}
-  {{- range $service := (index $root.Values.releaseUnits $unitName).services }}
-  {{- range $value := $service.gitValues }}{{ $_ := set $checkouts $value.repository true }}{{ end }}
-  {{- end }}
-  {{- end }}
-  {{- $checkoutPaths := dict }}
-  {{- range $i, $repository := keys $checkouts | sortAlpha }}{{ $_ := set $checkoutPaths $repository (printf "./sources/%d" $i) }}{{ end }}
+    {{- end }}
   promotionTemplate:
     spec:
       {{- with $env.vars }}
@@ -117,23 +102,32 @@ spec:
             checkout:
               - branch: {{ $root.Values.git.revision | quote }}
                 path: ./repo
+        {{- range $unitName := $promoted }}
+        {{- $unit := index $root.Values.releaseUnits $unitName }}
+        {{- $when := printf "${{ ctx.targetFreight.origin.name == %q }}" $unitName }}
+        {{- /* Repositories the unit reads values from, checked out at its Freight's commit. */}}
+        {{- $checkouts := dict }}
+        {{- range $service := $unit.services }}{{ range $value := $service.gitValues }}{{ $_ := set $checkouts $value.repository true }}{{ end }}{{ end }}
+        {{- $checkoutPaths := dict }}
+        {{- range $i, $repository := keys $checkouts | sortAlpha }}{{ $_ := set $checkoutPaths $repository (printf "./sources/%s-%d" $unitName $i) }}{{ end }}
         {{- range $repository := keys $checkoutPaths | sortAlpha }}
         - uses: git-clone
+          if: {{ $when | quote }}
           config:
             repoURL: {{ $repository | quote }}
             checkout:
-              - commit: {{ printf "${{ commitFrom(%q, warehouse(%q)).ID }}" $repository $root.Values.project | quote }}
+              - commit: {{ printf "${{ commitFrom(%q, warehouse(%q)).ID }}" $repository $unitName | quote }}
                 path: {{ index $checkoutPaths $repository }}
         {{- end }}
-        {{- range $unitName := $promoted }}
-        {{- range $serviceName, $service := (index $root.Values.releaseUnits $unitName).services }}
-        {{- with $service.gitValues }}
+        {{- range $serviceName, $service := $unit.services }}
+        {{- if $service.gitValues }}
         {{- $written := dict }}
-        {{- range $key := keys . | sortAlpha }}
+        {{- range $key := keys $service.gitValues | sortAlpha }}
         {{- $value := index $service.gitValues $key }}
         {{- $alias := printf "read-%s-%s" $serviceName (lower $key) }}
         - uses: {{ ternary "json-parse" "yaml-parse" (hasSuffix ".json" $value.path) }}
           as: {{ $alias }}
+          if: {{ $when | quote }}
           config:
             path: {{ printf "%s/%s" (index $checkoutPaths $value.repository) $value.path | quote }}
             outputs:
@@ -149,29 +143,26 @@ spec:
         {{- if not (hasKey $node $part) }}{{ $_ := set $node $part (dict) }}{{ end }}
         {{- $node = index $node $part }}
         {{- end }}
-        {{- $_ := set $node (last $keys) (printf "imageFrom(%q, warehouse(%q)).Digest" $image $root.Values.project) }}
+        {{- $_ := set $node (last $keys) (printf "imageFrom(%q, warehouse(%q)).Digest" $image $unitName) }}
         {{- end }}
         {{- /* The service owns its environment file: rewritten whole, so keys removed at the source disappear. */}}
         - uses: file-write
+          if: {{ $when | quote }}
           config:
             path: ./repo/{{ $root.Values.git.environments }}/{{ $envName }}/{{ $serviceName }}.yaml
             {{- /* Exactly one asYAML() expression: Kargo unquotes its result only when nothing surrounds it. */}}
             contents: {{ printf "${{ asYAML(%s) }}" (include "mitis.delivery.exprMap" $written) | quote }}
             overwrite: true
-        {{- end }}
-        {{- end }}
-        {{- end }}
-        {{- range $unitName := $promoted }}
-        {{- range $serviceName, $service := (index $root.Values.releaseUnits $unitName).services }}
-        {{- if not $service.gitValues }}
+        {{- else }}
         {{- with $service.images }}
         - uses: yaml-update
+          if: {{ $when | quote }}
           config:
             path: ./repo/{{ $root.Values.git.environments }}/{{ $envName }}/{{ $serviceName }}.yaml
             updates:
               {{- range $key, $image := . }}
               - key: {{ $key | quote }}
-                value: {{ printf "${{ imageFrom(%q, warehouse(%q)).Digest }}" $image $root.Values.project | quote }}
+                value: {{ printf "${{ imageFrom(%q, warehouse(%q)).Digest }}" $image $unitName | quote }}
               {{- end }}
         {{- end }}
         {{- end }}
@@ -180,27 +171,28 @@ spec:
         - uses: git-commit
           config:
             path: ./repo
-            message: Promote {{ $root.Values.project }} to {{ $envName }}
+            message: {{ printf "Promote ${{ ctx.targetFreight.origin.name }} to %s" $envName | quote }}
         - uses: git-push
           config:
             path: ./repo
+        {{- range $unitName := $promoted }}
+        {{- $when := printf "${{ ctx.targetFreight.origin.name == %q }}" $unitName }}
         # No desiredRevision: every environment tracks the shared branch, so pinning the pushed
         # commit would mark other environments unhealthy after any later commit.
         - uses: argocd-update
+          if: {{ $when | quote }}
           retry: {timeout: 15m}
           config:
             apps:
-              {{- range $unitName := $promoted }}
               - name: {{ $root.Values.project }}-{{ $unitName }}-{{ $envName }}
                 namespace: {{ $root.Values.argoNamespace }}
-              {{- end }}
         - uses: argocd-wait
+          if: {{ $when | quote }}
           retry: {timeout: 15m}
           config:
             apps:
-              {{- range $unitName := $promoted }}
               - name: {{ $root.Values.project }}-{{ $unitName }}-{{ $envName }}
                 namespace: {{ $root.Values.argoNamespace }}
-              {{- end }}
+        {{- end }}
 {{- end }}
 {{- end }}

@@ -39,6 +39,8 @@ releaseUnits:
         images: {image.digest: ghcr.io/example/worker}
   site:
     allowTags: '^[0-9a-f]{7}$'
+    # Freight pairs the site builds with the web commit their configuration comes from.
+    criteria: imageFrom('ghcr.io/example/portal').Tag == commitFrom('https://github.com/example/web.git').ID[0:7]
     services:
       portal:
         chart: webapp
@@ -59,6 +61,3 @@ charts:
     repository: https://charts.example.invalid
     name: proxy
     serviceScopes: []
-discovery:
-  # Freight pairs the site builds with the web commit their configuration comes from.
-  criteria: imageFrom('ghcr.io/example/portal').Tag == commitFrom('https://github.com/example/web.git').ID[0:7]
