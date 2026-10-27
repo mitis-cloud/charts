@@ -141,10 +141,11 @@ spec:
                 fromExpression: {{ $value.expression | default "$env" | quote }}
         {{- $written = append $written (printf "%q: outputs[%q].value" $key $alias) }}
         {{- end }}
+        {{- /* The service owns its environment file: rewritten whole, so keys removed at the source disappear. */}}
         - uses: file-write
           config:
-            path: ./repo/{{ $root.Values.git.environments }}/{{ $envName }}/{{ $serviceName }}.promoted.yaml
-            contents: {{ printf "${{ asYAML({%s}) }}" (join ", " $written) | quote }}
+            path: ./repo/{{ $root.Values.git.environments }}/{{ $envName }}/{{ $serviceName }}.yaml
+            contents: {{ printf "# Written by promotion from the source repository; edit the source instead.\n${{ asYAML({%s}) }}" (join ", " $written) | quote }}
             overwrite: true
         {{- end }}
         {{- end }}
