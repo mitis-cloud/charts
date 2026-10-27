@@ -2,7 +2,7 @@ apiVersion: v2
 name: delivery
 description: Native Argo CD and Kargo composition for explicit environments and independent release units.
 type: application
-version: 0.7.1
+version: 0.7.2
 kubeVersion: '>=1.35.0-0'
 home: https://github.com/mitis-cloud/charts
 sources:

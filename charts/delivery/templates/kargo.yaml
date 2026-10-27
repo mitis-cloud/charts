@@ -155,7 +155,8 @@ spec:
         - uses: file-write
           config:
             path: ./repo/{{ $root.Values.git.environments }}/{{ $envName }}/{{ $serviceName }}.yaml
-            contents: {{ printf "# Written by promotion from the source repository; edit the source instead.\n${{ asYAML(%s) }}" (include "mitis.delivery.exprMap" $written) | quote }}
+            {{- /* Exactly one asYAML() expression: Kargo unquotes its result only when nothing surrounds it. */}}
+            contents: {{ printf "${{ asYAML(%s) }}" (include "mitis.delivery.exprMap" $written) | quote }}
             overwrite: true
         {{- end }}
         {{- end }}
