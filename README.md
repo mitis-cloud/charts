@@ -40,6 +40,7 @@ These charts are opinionated: adopting them means adopting a defined platform. T
 | [**service**](charts/service/README.md) | A continuous service with its inputs, storage, helpers and jobs, or a resource-only service | `oci://ghcr.io/mitis-cloud/charts/service` |
 | [**delivery**](charts/delivery/README.md) | Argo CD applications and independent Kargo promotion units across explicit environments | `oci://ghcr.io/mitis-cloud/charts/delivery` |
 | [**environment**](charts/environment/README.md) | One environment's namespace, exposure profiles, isolation and maintenance switch, composed by Crossplane | `oci://ghcr.io/mitis-cloud/charts/environment` |
+| [**webapp**](charts/webapp/README.md) | Publishes one static site build, with its environment's configuration, to an environment's webapp | `oci://ghcr.io/mitis-cloud/charts/webapp` |
 
 The charts are public on GHCR, published from tested Git tags through CI, and pull anonymously. Each chart is versioned independently and licensed Apache-2.0.
 

@@ -46,6 +46,9 @@ STEP_BASE = f"{RAW}/akuity/kargo/v1.12.4/pkg/promotion/runner/builtin/schemas/"
 STEPS = [
     "git-clone",
     "yaml-update",
+    "json-parse",
+    "yaml-parse",
+    "file-write",
     "git-commit",
     "git-push",
     "argocd-update",
@@ -119,7 +122,7 @@ def main():
     native = []
     applications = []
     count = 0
-    for chart in ["service", "delivery"]:
+    for chart in ["service", "delivery", "webapp"]:
         for example in sorted((ROOT / "examples" / chart).glob("*.yaml")):
             for doc in render(ROOT / "charts" / chart, example):
                 key = (doc["apiVersion"], doc["kind"])
@@ -202,6 +205,8 @@ def main():
         "example-worker-production",
         "example-edge-test",
         "example-edge-production",
+        "example-site-test",
+        "example-site-production",
     }
     print(
         f"Expanded {len(applications)} Application templates using native Go text/template; generated Application schemas valid."

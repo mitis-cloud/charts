@@ -26,7 +26,8 @@
         "routing": {"enum": ["ingress", "gateway"]},
         "externallyScaled": {"type": "boolean", "description": "Replica counts are changed outside Git, for example by scheduled downscaling; Argo ignores them."},
         "layers": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-zA-Z0-9_-][a-zA-Z0-9_/-]*\\.yaml$"}, "description": "Repository-relative values files applied to every service between its definition and the environment's own files, in order."},
-        "environment": {"type": "object", "description": "Values for the environment chart, deployed and synchronized automatically. Requires the environment chart pin; the namespace comes from the environment."}
+        "environment": {"type": "object", "description": "Values for the environment chart, deployed and synchronized automatically. Requires the environment chart pin; the namespace comes from the environment."},
+        "vars": {"type": "object", "propertyNames": {"pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"}, "additionalProperties": {"type": "string"}, "description": "Promotion variables, available to gitValues paths and expressions as ${{ vars.<name> }}."}
       }
     }},
     "releaseUnits": {"type": "object", "minProperties": 1, "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {
@@ -36,6 +37,13 @@
           "type": "object", "additionalProperties": false, "required": ["chart"], "properties": {
             "chart": {"$ref": "#/definitions/name"}, "releaseName": {"$ref": "#/definitions/name"},
             "order": {"type": "integer", "minimum": 0, "maximum": 100, "description": "Service slot within the coordinated Application. Later slots wait for earlier services' after-jobs."},
+            "gitValues": {"type": "object", "minProperties": 1, "propertyNames": {"pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"}, "additionalProperties": {
+              "type": "object", "additionalProperties": false, "required": ["repository", "path"], "properties": {
+                "repository": {"type": "string", "pattern": "^https://"}, "branch": {"type": "string", "minLength": 1},
+                "path": {"type": "string", "pattern": "\\.(json|ya?ml)$", "description": "File in the repository at the promoted commit; may use ${{ vars.<name> }}."},
+                "expression": {"type": "string", "minLength": 1, "description": "expr-lang expression selecting part of the parsed file; the whole file by default."}
+              }
+            }, "description": "Top-level values promoted from files in Git repositories at the Freight's commit; the Warehouse follows those repositories."},
             "images": {"type": "object", "minProperties": 1, "propertyNames": {"pattern": "^([a-zA-Z][a-zA-Z0-9_-]*\\.)*digest$"}, "additionalProperties": {"type": "string", "minLength": 1}, "description": "Values paths to immutable image digests and the image repositories they promote. Keys must already exist in environment overrides. A unit without any is configuration: it syncs automatically and has no Kargo stage."},
             "capacityTargets": {"type": "array", "items": {
               "type": "object", "additionalProperties": false, "required": ["name", "kind"], "properties": {
@@ -50,7 +58,8 @@
       "match": {"type": "string", "minLength": 1}, "color": {"type": "string", "pattern": "^(#[0-9A-Fa-f]{6}|[a-z]+)$"}
     }}},
     "discovery": {"type": "object", "additionalProperties": false, "properties": {
-      "interval": {"type": "string", "pattern": "^[1-9][0-9]*(s|m|h)$"}, "allowTags": {"type": "string", "minLength": 1}, "limit": {"type": "integer", "minimum": 1}
+      "interval": {"type": "string", "pattern": "^[1-9][0-9]*(s|m|h)$"}, "allowTags": {"type": "string", "minLength": 1}, "limit": {"type": "integer", "minimum": 1},
+      "criteria": {"type": "string", "minLength": 1, "description": "Freight creation criteria: a Kargo expression every new Freight must satisfy."}
     }}
   },
   "definitions": {

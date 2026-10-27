@@ -11,4 +11,5 @@ package:
 	helm package charts/service --destination dist
 	helm package charts/delivery --destination dist
 	helm package charts/environment --destination dist
+	helm package charts/webapp --destination dist
 	crossplane xpkg build --package-root crossplane --examples-root examples/crossplane -o dist/platform.xpkg

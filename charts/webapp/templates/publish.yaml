@@ -1,0 +1,122 @@
+{{- $name := .Values.name | default .Release.Name -}}
+{{- $host := index (splitList "/" .Values.artifact.repository) 0 -}}
+{{- $registry := index (splitList "." $host) 0 -}}
+{{- $region := index (splitList "." $host) 3 -}}
+{{- $repository := trimPrefix (printf "%s/" $host) .Values.artifact.repository -}}
+{{- $seconds := regexReplaceAll "[smh]$" .Values.timeout "" | int -}}
+{{- $unit := regexFind "[smh]$" .Values.timeout -}}
+{{- $timeout := mul $seconds (get (dict "s" 1 "m" 60 "h" 3600) $unit) -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-publish
+  labels:
+    app.kubernetes.io/name: {{ $name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+data:
+  {{- with .Values.config }}
+  config.json: {{ toJson . | quote }}
+  {{- end }}
+  # Fetches the zip through the ECR API, so neither oras nor registry credentials are needed in the pod.
+  fetch.sh: |
+    set -eu
+    manifest=$(aws ecr batch-get-image --registry-id "$REGISTRY" --repository-name "$REPOSITORY" \
+      --image-ids "imageDigest=$DIGEST" --accepted-media-types application/vnd.oci.image.manifest.v1+json \
+      --query 'images[0].imageManifest' --output text)
+    layer=$(printf '%s' "$manifest" | tr -d ' \n' | sed -n 's/.*"layers":\[{[^}]*"digest":"\(sha256:[0-9a-f]*\)".*/\1/p')
+    [ -n "$layer" ] || { echo "no layer in $REPOSITORY@$DIGEST" >&2; exit 1; }
+    url=$(aws ecr get-download-url-for-layer --registry-id "$REGISTRY" --repository-name "$REPOSITORY" \
+      --layer-digest "$layer" --query downloadUrl --output text)
+    curl -sSfL -o /work/artifact.zip "$url"
+    echo "${layer#sha256:}  /work/artifact.zip" | sha256sum -c -
+  unpack.sh: |
+    set -eu
+    mkdir -p /work/build /work/site
+    unzip -q /work/artifact.zip -d /work/build
+    cp -R "/work/build/$SOURCE/." /work/site/
+    if [ -f /publish/config.json ]; then cp /publish/config.json /work/site/config.json; fi
+  # Uploads everything: build timestamps predate the objects they replace, so a sync would skip changes.
+  upload.sh: |
+    set -eu
+    aws s3 cp /work/site "s3://$BUCKET/$PREFIX" --recursive --no-progress
+    if [ "$REPLACE" = true ]; then aws s3 sync /work/site "s3://$BUCKET/$PREFIX" --delete --no-progress; fi
+    aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" --paths '/*' --query Invalidation.Id --output text
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}-publish
+  labels:
+    app.kubernetes.io/name: {{ $name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/sync-wave: "10"
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ $timeout }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ $name }}
+    spec:
+      # The Webapp composite grants this account its own bucket and distribution only.
+      serviceAccountName: {{ $name }}-publisher
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      {{- if ne .Values.placement "any" }}
+      nodeSelector:
+        env: {{ .Values.placement }}
+      tolerations:
+        - key: env
+          operator: Equal
+          value: {{ .Values.placement }}
+          effect: NoSchedule
+      {{- end }}
+      initContainers:
+        - name: fetch
+          image: {{ printf "%s:%s" .Values.tools.aws.repository .Values.tools.aws.tag }}
+          command: [/bin/sh, /publish/fetch.sh]
+          env:
+            - {name: AWS_REGION, value: {{ $region }}}
+            - {name: REGISTRY, value: {{ $registry | quote }}}
+            - {name: REPOSITORY, value: {{ $repository }}}
+            - {name: DIGEST, value: {{ .Values.artifact.digest }}}
+          resources: {{ toJson .Values.resources }}
+          volumeMounts:
+            - {name: work, mountPath: /work}
+            - {name: publish, mountPath: /publish, readOnly: true}
+        - name: unpack
+          image: {{ printf "%s:%s" .Values.tools.unpack.repository .Values.tools.unpack.tag }}
+          command: [/bin/sh, /publish/unpack.sh]
+          env:
+            - {name: SOURCE, value: {{ .Values.source | quote }}}
+          resources: {{ toJson .Values.resources }}
+          volumeMounts:
+            - {name: work, mountPath: /work}
+            - {name: publish, mountPath: /publish, readOnly: true}
+      containers:
+        - name: upload
+          image: {{ printf "%s:%s" .Values.tools.aws.repository .Values.tools.aws.tag }}
+          command: [/bin/sh, /publish/upload.sh]
+          env:
+            - {name: AWS_REGION, value: {{ $region }}}
+            - {name: PREFIX, value: {{ .Values.prefix | quote }}}
+            - {name: REPLACE, value: {{ .Values.replace | quote }}}
+            - name: BUCKET
+              valueFrom: {secretKeyRef: {name: {{ $name }}-outputs, key: bucket}}
+            - name: DISTRIBUTION
+              valueFrom: {secretKeyRef: {name: {{ $name }}-outputs, key: distribution}}
+          resources: {{ toJson .Values.resources }}
+          volumeMounts:
+            - {name: work, mountPath: /work}
+            - {name: publish, mountPath: /publish, readOnly: true}
+      volumes:
+        - name: work
+          emptyDir: {}
+        - name: publish
+          configMap:
+            name: {{ $name }}-publish

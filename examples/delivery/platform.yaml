@@ -5,8 +5,9 @@ environments:
   test:
     cluster: test
     namespace: example-test
-    charts: {service: 0.1.0, environment: 0.1.0, proxy: 1.0.0}
+    charts: {service: 0.1.0, environment: 0.1.0, proxy: 1.0.0, webapp: 0.1.0}
     promotion: automatic
+    vars: {stage: test}
     layers: [stages/test.yaml]
     externallyScaled: true
     environment:
@@ -15,8 +16,9 @@ environments:
   production:
     cluster: production
     namespace: example
-    charts: {service: 0.1.0, proxy: 1.0.0}
+    charts: {service: 0.1.0, proxy: 1.0.0, webapp: 0.1.0}
     upstream: [test]
+    vars: {stage: production}
     promotion: manual
 releaseUnits:
   backend:
@@ -35,6 +37,19 @@ releaseUnits:
       worker:
         chart: service
         images: {image.digest: ghcr.io/example/worker}
+  site:
+    allowTags: '^[0-9a-f]{7}$'
+    services:
+      portal:
+        chart: webapp
+        images: {artifact.digest: ghcr.io/example/portal}
+        gitValues:
+          config: {repository: https://github.com/example/web.git, path: 'configs/${{ vars.stage }}/portal.json'}
+      assets:
+        chart: webapp
+        images: {artifact.digest: ghcr.io/example/assets}
+        gitValues:
+          source: {repository: https://github.com/example/web.git, path: 'configs/${{ vars.stage }}/portal.json', expression: theme}
   edge:
     services:
       edge-proxy:
@@ -44,3 +59,6 @@ charts:
     repository: https://charts.example.invalid
     name: proxy
     serviceScopes: []
+discovery:
+  # Freight pairs the site builds with the web commit their configuration comes from.
+  criteria: imageFrom('ghcr.io/example/portal').Tag == commitFrom('https://github.com/example/web.git').ID[0:7]

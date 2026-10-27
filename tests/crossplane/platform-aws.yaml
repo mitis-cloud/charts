@@ -17,6 +17,8 @@ data:
   region: eu-west-1
   cluster:
     name: example-cluster
+  artifacts:
+    repositories: ['arn:aws:ecr:eu-west-1:000000000000:repository/portal-*']
   dns:
     zones:
       example.invalid: Z0000000000EXAMPLE

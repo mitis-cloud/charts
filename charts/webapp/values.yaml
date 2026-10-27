@@ -1,0 +1,24 @@
+# The Webapp to publish to; defaults to the release name.
+name: ''
+artifact:
+  repository: ''
+  digest: ''
+source: ''
+prefix: ''
+replace: false
+config: null
+placement: any
+timeout: 10m
+tools:
+  aws:
+    repository: amazon/aws-cli
+    tag: 2.38.5
+  unpack:
+    repository: busybox
+    tag: 1.38.0
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 256Mi

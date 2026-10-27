@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "Webapp publishing",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifact"],
+  "properties": {
+    "global": {"type": "object"},
+    "name": {"type": "string", "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?)?$", "maxLength": 40, "description": "Webapp to publish to; empty uses the release name."},
+    "artifact": {
+      "type": "object", "additionalProperties": false, "required": ["repository", "digest"],
+      "properties": {
+        "repository": {"type": "string", "pattern": "^[0-9]{12}\\.dkr\\.ecr\\.[a-z0-9-]+\\.amazonaws\\.com/[a-z0-9._/-]+$", "description": "ECR repository holding the zip artifact."},
+        "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "source": {"type": "string", "pattern": "^([A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*)?$", "description": "Folder inside the zip to publish; empty publishes the whole zip."},
+    "prefix": {"type": "string", "pattern": "^([A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*)?$", "description": "Key prefix inside the bucket."},
+    "replace": {"type": "boolean", "description": "Delete objects under the prefix that the build no longer contains."},
+    "config": {"type": ["object", "null"], "description": "Published as config.json next to the build."},
+    "placement": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", "description": "Workload pool, using the env node label and taint; any adds no constraint."},
+    "timeout": {"type": "string", "pattern": "^[1-9][0-9]*(s|m|h)$"},
+    "tools": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "aws": {"$ref": "#/definitions/image"},
+        "unpack": {"$ref": "#/definitions/image"}
+      }
+    },
+    "resources": {"type": "object"}
+  },
+  "definitions": {
+    "image": {
+      "type": "object", "additionalProperties": false, "required": ["repository", "tag"],
+      "properties": {"repository": {"type": "string", "minLength": 1}, "tag": {"type": "string", "minLength": 1}}
+    }
+  }
+}

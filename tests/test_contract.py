@@ -668,19 +668,19 @@ class DeliveryContract(unittest.TestCase):
         warehouses = [d for d in docs if d["kind"] == "Warehouse"]
         self.assertEqual(["example"], [w["metadata"]["name"] for w in warehouses])
         self.assertEqual(
-            ["ghcr.io/example/backend", "ghcr.io/example/database", "ghcr.io/example/worker"],
-            [s["image"]["repoURL"] for s in warehouses[0]["spec"]["subscriptions"]],
+            ["ghcr.io/example/assets", "ghcr.io/example/backend", "ghcr.io/example/database", "ghcr.io/example/portal", "ghcr.io/example/worker"],
+            [s["image"]["repoURL"] for s in warehouses[0]["spec"]["subscriptions"] if "image" in s],
         )
         stages = {d["metadata"]["name"]: d for d in docs if d["kind"] == "Stage"}
         self.assertEqual({"test", "production"}, set(stages))
         self.assertEqual(stages["production"]["spec"]["requestedFreight"][0]["sources"], {"stages": ["test"]})
         steps = stages["production"]["spec"]["promotionTemplate"]["spec"]["steps"]
         updates = [s["config"]["path"] for s in steps if s["uses"] == "yaml-update"]
-        self.assertEqual(updates, [f"./repo/environments/production/{s}.yaml" for s in ["api", "migrations", "worker"]])
+        self.assertEqual(updates, [f"./repo/environments/production/{s}.yaml" for s in ["api", "migrations", "assets", "portal", "worker"]])
         sync = next(s for s in steps if s["uses"] == "argocd-update")
         self.assertEqual(
             [a["name"] for a in sync["config"]["apps"]],
-            ["example-backend-production", "example-worker-production"],
+            ["example-backend-production", "example-site-production", "example-worker-production"],
         )
         # Health must not pin the shared branch to one promotion's commit.
         self.assertTrue(all("sources" not in a for a in sync["config"]["apps"]))
@@ -699,14 +699,44 @@ class DeliveryContract(unittest.TestCase):
         unmatched = render(self.chart, self.example, {"stageColors": [{"match": "^staging", "color": "yellow"}]})
         self.assertTrue(all("annotations" not in d["metadata"] for d in unmatched if d["kind"] == "Stage"))
 
+    def test_git_values_promote_files_at_the_freight_commit(self):
+        docs = render(self.chart, self.example)
+        warehouse = resource(docs, "Warehouse", "example")["spec"]
+        self.assertIn(
+            {"git": {"repoURL": "https://github.com/example/web.git", "branch": "main", "commitSelectionStrategy": "NewestFromBranch", "discoveryLimit": 20}},
+            warehouse["subscriptions"],
+        )
+        self.assertEqual(
+            warehouse["freightCreationCriteria"]["expression"],
+            "imageFrom('ghcr.io/example/portal').Tag == commitFrom('https://github.com/example/web.git').ID[0:7]",
+        )
+        stage = resource(docs, "Stage", "test")["spec"]["promotionTemplate"]["spec"]
+        self.assertEqual(stage["vars"], [{"name": "stage", "value": "test"}])
+        steps = stage["steps"]
+        clone = steps[1]["config"]
+        self.assertEqual(clone["repoURL"], "https://github.com/example/web.git")
+        self.assertEqual(clone["checkout"], [{"commit": '${{ commitFrom("https://github.com/example/web.git", warehouse("example")).ID }}', "path": "./sources/0"}])
+        parse = next(s for s in steps if s.get("as") == "read-portal-config")
+        self.assertEqual(parse["uses"], "json-parse")
+        self.assertEqual(parse["config"]["path"], "./sources/0/configs/${{ vars.stage }}/portal.json")
+        self.assertEqual(parse["config"]["outputs"], [{"name": "value", "fromExpression": "$env"}])
+        theme = next(s for s in steps if s.get("as") == "read-assets-source")
+        self.assertEqual(theme["config"]["outputs"][0]["fromExpression"], "theme")
+        writes = {s["config"]["path"]: s["config"]["contents"] for s in steps if s["uses"] == "file-write"}
+        self.assertEqual(writes["./repo/environments/test/portal.promoted.yaml"], '${{ asYAML({"config": outputs["read-portal-config"].value}) }}')
+        # The promoted file comes last, so the source repository wins over environment overrides.
+        files = self.expanded_sources(docs, "site", "test")[0]["helm"]["valueFiles"]
+        self.assertEqual(files[-2:], ["$values/environments/test/assets.yaml", "$values/environments/test/assets.promoted.yaml"])
+        self.assertNotIn("$values/environments/test/worker.promoted.yaml", self.expanded_sources(docs, "worker", "test")[0]["helm"]["valueFiles"])
+
     def test_warehouse_uses_supported_tag_selection(self):
         # Kargo >= 1.11 rejects the deprecated allowTags field at discovery time.
         docs = render(self.chart, self.example)
         filters = {
             s["image"]["repoURL"]: s["image"]["allowTagsRegexes"]
-            for s in resource(docs, "Warehouse", "example")["spec"]["subscriptions"]
+            for s in resource(docs, "Warehouse", "example")["spec"]["subscriptions"] if "image" in s
         }
-        self.assertTrue(all("allowTags" not in s["image"] for s in resource(docs, "Warehouse")["spec"]["subscriptions"]))
+        self.assertTrue(all("allowTags" not in s.get("image", {}) for s in resource(docs, "Warehouse")["spec"]["subscriptions"]))
         self.assertEqual(filters["ghcr.io/example/backend"], [r"^v?[0-9]+\.[0-9]+\.[0-9]+$"])
         self.assertEqual(filters["ghcr.io/example/worker"], [r"^[0-9a-f]{7}$"])
         render(
