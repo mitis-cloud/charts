@@ -723,11 +723,16 @@ class DeliveryContract(unittest.TestCase):
         theme = next(s for s in steps if s.get("as") == "read-assets-source")
         self.assertEqual(theme["config"]["outputs"][0]["fromExpression"], "theme")
         writes = {s["config"]["path"]: s["config"]["contents"] for s in steps if s["uses"] == "file-write"}
-        self.assertEqual(writes["./repo/environments/test/portal.promoted.yaml"], '${{ asYAML({"config": outputs["read-portal-config"].value}) }}')
-        # The promoted file comes last, so the source repository wins over environment overrides.
+        self.assertEqual(
+            writes["./repo/environments/test/portal.yaml"],
+            '# Written by promotion from the source repository; edit the source instead.\n${{ asYAML({"config": outputs["read-portal-config"].value}) }}',
+        )
+        # The environment file is rewritten before the digest is set in it, and no extra values file exists.
+        order = [(s["uses"], s["config"].get("path")) for s in steps if s["config"].get("path") == "./repo/environments/test/portal.yaml"]
+        self.assertEqual([u for u, _ in order], ["file-write", "yaml-update"])
         files = self.expanded_sources(docs, "site", "test")[0]["helm"]["valueFiles"]
-        self.assertEqual(files[-2:], ["$values/environments/test/assets.yaml", "$values/environments/test/assets.promoted.yaml"])
-        self.assertNotIn("$values/environments/test/worker.promoted.yaml", self.expanded_sources(docs, "worker", "test")[0]["helm"]["valueFiles"])
+        self.assertEqual(files[-1], "$values/environments/test/assets.yaml")
+        self.assertFalse([f for f in files if "promoted" in f])
 
     def test_warehouse_uses_supported_tag_selection(self):
         # Kargo >= 1.11 rejects the deprecated allowTags field at discovery time.

@@ -43,7 +43,7 @@
                 "path": {"type": "string", "pattern": "\\.(json|ya?ml)$", "description": "File in the repository at the promoted commit; may use ${{ vars.<name> }}."},
                 "expression": {"type": "string", "minLength": 1, "description": "expr-lang expression selecting part of the parsed file; the whole file by default."}
               }
-            }, "description": "Top-level values promoted from files in Git repositories at the Freight's commit; the Warehouse follows those repositories."},
+            }, "description": "Top-level values promoted from files in Git repositories at the Freight's commit; the Warehouse follows those repositories. The service's environment file becomes promotion-owned and is rewritten whole."},
             "images": {"type": "object", "minProperties": 1, "propertyNames": {"pattern": "^([a-zA-Z][a-zA-Z0-9_-]*\\.)*digest$"}, "additionalProperties": {"type": "string", "minLength": 1}, "description": "Values paths to immutable image digests and the image repositories they promote. Keys must already exist in environment overrides. A unit without any is configuration: it syncs automatically and has no Kargo stage."},
             "capacityTargets": {"type": "array", "items": {
               "type": "object", "additionalProperties": false, "required": ["name", "kind"], "properties": {

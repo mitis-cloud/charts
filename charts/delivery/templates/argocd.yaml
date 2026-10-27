@@ -47,10 +47,6 @@ spec:
               - $values/{{ $root.Values.git.environments }}/{{ "{{ .environment }}" }}/defaults.yaml
               {{- end }}
               - $values/{{ $root.Values.git.environments }}/{{ "{{ .environment }}" }}/{{ $serviceName }}.yaml
-              {{- if $service.gitValues }}
-              # Written by promotion from the Freight's Git sources: last, so the source repository wins.
-              - $values/{{ $root.Values.git.environments }}/{{ "{{ .environment }}" }}/{{ $serviceName }}.promoted.yaml
-              {{- end }}
             ignoreMissingValueFiles: false
             {{- with $chart.serviceScopes }}
             parameters:
