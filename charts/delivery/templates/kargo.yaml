@@ -28,7 +28,16 @@ spec:
 {{- end }}
 {{- end }}
 {{- end }}
-{{- if $repos }}
+{{- /* Git repositories whose files promote into values, by branch. */}}
+{{- $sources := dict }}
+{{- range $unit := .Values.releaseUnits }}
+{{- range $service := $unit.services }}
+{{- range $value := $service.gitValues }}
+{{- $_ := set $sources $value.repository ($value.branch | default "main") }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if or $repos $sources }}
 ---
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Warehouse
@@ -45,6 +54,17 @@ spec:
         allowTagsRegexes: [{{ index $repos $image | quote }}]
         discoveryLimit: {{ $root.Values.discovery.limit }}
     {{- end }}
+    {{- range $repository := keys $sources | sortAlpha }}
+    - git:
+        repoURL: {{ $repository | quote }}
+        branch: {{ index $sources $repository | quote }}
+        commitSelectionStrategy: NewestFromBranch
+        discoveryLimit: {{ $root.Values.discovery.limit }}
+    {{- end }}
+  {{- with $root.Values.discovery.criteria }}
+  freightCreationCriteria:
+    expression: {{ . | quote }}
+  {{- end }}
 {{- end }}
 {{- range $envName, $env := .Values.environments }}
 {{- $promoted := include "mitis.delivery.promotedUnits" (dict "root" $root "env" $env) | fromJsonArray }}
@@ -72,8 +92,24 @@ spec:
         {{- else }}
         direct: true
         {{- end }}
+  {{- /* Repositories this environment's promoted units read values from, checked out at the Freight's commit. */}}
+  {{- $checkouts := dict }}
+  {{- range $unitName := $promoted }}
+  {{- range $service := (index $root.Values.releaseUnits $unitName).services }}
+  {{- range $value := $service.gitValues }}{{ $_ := set $checkouts $value.repository true }}{{ end }}
+  {{- end }}
+  {{- end }}
+  {{- $checkoutPaths := dict }}
+  {{- range $i, $repository := keys $checkouts | sortAlpha }}{{ $_ := set $checkoutPaths $repository (printf "./sources/%d" $i) }}{{ end }}
   promotionTemplate:
     spec:
+      {{- with $env.vars }}
+      vars:
+        {{- range $name := keys . | sortAlpha }}
+        - name: {{ $name }}
+          value: {{ index $env.vars $name | quote }}
+        {{- end }}
+      {{- end }}
       steps:
         - uses: git-clone
           config:
@@ -81,6 +117,38 @@ spec:
             checkout:
               - branch: {{ $root.Values.git.revision | quote }}
                 path: ./repo
+        {{- range $repository := keys $checkoutPaths | sortAlpha }}
+        - uses: git-clone
+          config:
+            repoURL: {{ $repository | quote }}
+            checkout:
+              - commit: {{ printf "${{ commitFrom(%q, warehouse(%q)).ID }}" $repository $root.Values.project | quote }}
+                path: {{ index $checkoutPaths $repository }}
+        {{- end }}
+        {{- range $unitName := $promoted }}
+        {{- range $serviceName, $service := (index $root.Values.releaseUnits $unitName).services }}
+        {{- with $service.gitValues }}
+        {{- $written := list }}
+        {{- range $key := keys . | sortAlpha }}
+        {{- $value := index $service.gitValues $key }}
+        {{- $alias := printf "read-%s-%s" $serviceName (lower $key) }}
+        - uses: {{ ternary "json-parse" "yaml-parse" (hasSuffix ".json" $value.path) }}
+          as: {{ $alias }}
+          config:
+            path: {{ printf "%s/%s" (index $checkoutPaths $value.repository) $value.path | quote }}
+            outputs:
+              - name: value
+                fromExpression: {{ $value.expression | default "$env" | quote }}
+        {{- $written = append $written (printf "%q: outputs[%q].value" $key $alias) }}
+        {{- end }}
+        - uses: file-write
+          config:
+            path: ./repo/{{ $root.Values.git.environments }}/{{ $envName }}/{{ $serviceName }}.promoted.yaml
+            contents: {{ printf "${{ asYAML({%s}) }}" (join ", " $written) | quote }}
+            overwrite: true
+        {{- end }}
+        {{- end }}
+        {{- end }}
         {{- range $unitName := $promoted }}
         {{- range $serviceName, $service := (index $root.Values.releaseUnits $unitName).services }}
         {{- with $service.images }}

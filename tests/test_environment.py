@@ -292,8 +292,10 @@ class AwsWebappComposition(unittest.TestCase):
         policy = json.loads(docs["publisher-policy"]["spec"]["forProvider"]["policy"])["Statement"]
         self.assertEqual(
             [s["Resource"] for s in policy],
-            ["arn:aws:s3:::portal.app.example.invalid", "arn:aws:s3:::portal.app.example.invalid/*", "arn:aws:cloudfront::000000000000:distribution/E1EXAMPLEDIST"],
+            ["arn:aws:s3:::portal.app.example.invalid", "arn:aws:s3:::portal.app.example.invalid/*", "arn:aws:cloudfront::000000000000:distribution/E1EXAMPLEDIST",
+             ["arn:aws:ecr:eu-west-1:000000000000:repository/portal-*"]],
         )
+        self.assertEqual(policy[-1]["Action"], ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"])
         identity = docs["publisher-identity"]["spec"]["forProvider"]
         self.assertEqual((identity["clusterName"], identity["namespace"], identity["serviceAccount"]), ("example-cluster", "example", "portal-publisher"))
         self.assertEqual(identity["roleArnRef"], {"name": "portal-publisher"})

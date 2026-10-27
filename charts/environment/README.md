@@ -19,7 +19,7 @@ An environment is one application namespace and everything its services share: t
 
 | `secrets.store`, `secrets.prefix` | The ClusterSecretStore holding the environment's values and their remote key prefix. Required with `databases`. |
 | `secrets.generated` | Values by remote key suffix: `password` (default 32 characters with symbols), `string` (letters and digits, `length` required), `username` (lowercase letters), `manual` (a `-` placeholder a person replaces) or `value` (fixed content). Each is generated and published only when its remote key does not exist, so existing values are kept. |
-| `webapps.<name>` | A static site at `hostname` (inside a platform DNS zone). `mode: application` (default) routes non-file paths to the single-page application and caches only `cachedPaths` (default `/assets/*`); `mode: files` serves stored files as they are, all cached, and ignores maintenance. It follows the environment's maintenance switch and body, and publishes its bucket and CDN identifiers as `<prefix><name>-website-bucket-id` and `<prefix><name>-cloudfront-website-id` for upload tooling. The `<name>-outputs` Secret holds the same `bucket` and `distribution` in the namespace, and the `<name>-publisher` service account may upload to the bucket and invalidate the distribution, nothing else. Requires `secrets`. |
+| `webapps.<name>` | A static site at `hostname` (inside a platform DNS zone). `mode: application` (default) routes non-file paths to the single-page application and caches only `cachedPaths` (default `/assets/*`); `mode: files` serves stored files as they are, all cached, and ignores maintenance. It follows the environment's maintenance switch and body, and publishes its bucket and CDN identifiers as `<prefix><name>-website-bucket-id` and `<prefix><name>-cloudfront-website-id` for upload tooling. The `<name>-outputs` Secret holds the same `bucket` and `distribution` in the namespace, and the `<name>-publisher` service account may upload to the bucket, invalidate the distribution and read the platform's `artifacts.repositories`, nothing else. The [webapp chart](../webapp/README.md) publishes builds with it. Requires `secrets`. |
 | `databases.<key>` | A PostgreSQL database `<namespace>-<key>` on the platform's shared instance: `extensions`, `schemas` (per schema `operator` and `reader` access: `full`, `read`, `read-execute` or `none`; `existingFunctions`, `adminMaintain`) and `accounts` (name to `admin`, `operator` or `reader` group). |
 
 See [the example](../../examples/environment/values.yaml) and [values.schema.json](values.schema.json).
@@ -52,6 +52,9 @@ Removing the release or its Argo CD Application leaves the `Environment` in plac
     region: eu-west-1                 # needed for webapps
     cluster:
       name: example-cluster           # EKS cluster, for webapp publisher identities
+    artifacts:
+      repositories:                   # optional: ECR repositories publishers may read builds from
+        - arn:aws:ecr:eu-west-1:000000000000:repository/portal-*
     dns:
       zones:                          # public zones webapp hostnames live in, by domain
         example.invalid: Z0000000000EXAMPLE

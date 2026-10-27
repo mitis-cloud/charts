@@ -24,6 +24,7 @@ See [the complete example](../../examples/delivery/platform.yaml) and [values.sc
 | `discovery.interval` | Warehouse refresh interval, default `5m`. |
 | `discovery.allowTags` | Allowed image-tag regular expression; default semantic release tags, optionally prefixed `v`. |
 | `discovery.limit` | Discovery history limit, default 20. |
+| `discovery.criteria` | Optional Freight creation criteria: a Kargo expression every new Freight must satisfy, for example that builds and the Git commit their configuration comes from share a tag. |
 
 The default `charts.service` points at `ghcr.io/mitis-cloud/charts`, chart `service`, and root scope `['']`; the default `charts.environment` points at the [environment chart](../environment/README.md). For an OCI Helm source, Argo's chart `repoURL` omits `oci://`; register it with Argo as an OCI-enabled Helm repository. Chart versions come from each environment, independently of images and the delivery chart's version.
 
@@ -43,7 +44,7 @@ Optional `environment` holds [environment chart](../environment/README.md) value
 
 Optional `externallyScaled: true` declares that replica counts change outside Git, for example through scheduled downscaling: Argo ignores `spec.replicas` on Deployments, StatefulSets and Rollouts there, so automatic synchronization does not fight the scaler, and service-chart sources get `render.capacity: external` so their Understudy baseline doesn't either (requires service chart 0.3.1 or later).
 
-Optional `units` selects which defined release units exist there; omission selects all. `upstream` is a list of predecessor environment names. An empty list means direct discovery from the project Warehouse. `promotion` is `manual` (default) or `automatic`. `routing` is `gateway` (default) or `ingress`.
+Optional `vars` are promotion variables for `gitValues` (e.g. `{stage: test, tenant: example}`). Optional `units` selects which defined release units exist there; omission selects all. `upstream` is a list of predecessor environment names. An empty list means direct discovery from the project Warehouse. `promotion` is `manual` (default) or `automatic`. `routing` is `gateway` (default) or `ingress`.
 
 Names do not infer edges, create missing environments, or impose tenant/stage dimensions. Unknown references, missing pins, promotion cycles, and upstreams that lack a required unit fail rendering. Two upstreams are eligible sources, not a requirement that both separately approve the same Freight.
 
@@ -55,6 +56,7 @@ Names do not infer edges, create missing environments, or impose tenant/stage di
 - `releaseName`: optional Helm release identity; defaults to the service key.
 - `order`: coordinated-service slot (0–100, default 0); a later service waits for earlier slots' after-jobs within the Application.
 - `images`: values paths mapped to image repositories, e.g. `image.digest: ghcr.io/example/backend`. Wrapper paths may be nested. The project Warehouse subscribes once per unique repository. A unit where no service declares images is configuration: Kargo does not promote it, and its Applications sync automatically.
+- `gitValues` (service level): top-level values filled at promotion from files in Git repositories, as `<key>: {repository, path, branch, expression}`. The project Warehouse follows each repository's branch (default `main`). Promotion checks the repository out at the Freight's commit, parses the JSON or YAML file at `path` (which may use `${{ vars.<name> }}`), optionally narrows it with an expr-lang `expression` (the whole file by default), and writes `<environment>/<service>.promoted.yaml`. That file is the service's last values file, so the source repository wins over environment overrides. Never edit it by hand; promote instead.
 - `allowTags` (unit level, beside `services`): image-tag regular expression for this unit's images, overriding `discovery.allowTags`, for example `^[0-9a-f]{7}$` for commit tags. The newest build among matching tags is selected. An image shared by two units must use the same filter.
 - `capacityTargets`: exact `{name, kind}` references for Understudy-managed Deployment/Rollout replicas. This declares field ownership for Argo, not capacity values. Match it to the service's actual protection resources and keep it absent for unprotected targets.
 

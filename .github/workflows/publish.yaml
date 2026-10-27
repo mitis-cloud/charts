@@ -1,7 +1,7 @@
 name: Publish chart
 on:
   push:
-    tags: ['service-v*', 'delivery-v*', 'environment-v*', 'platform-v*']
+    tags: ['service-v*', 'delivery-v*', 'environment-v*', 'platform-v*', 'webapp-v*']
 permissions:
   contents: read
 concurrency:
@@ -41,7 +41,7 @@ jobs:
           set -euo pipefail
           chart="${TAG%-v*}"
           version="${TAG#*-v}"
-          case "$chart" in service|delivery|environment|platform) ;; *) exit 1 ;; esac
+          case "$chart" in service|delivery|environment|platform|webapp) ;; *) exit 1 ;; esac
           if [ "$chart" = platform ]; then
             printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
             if docker manifest inspect "ghcr.io/mitis-cloud/platform:v$version" > /dev/null 2>&1; then

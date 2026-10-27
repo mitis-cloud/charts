@@ -381,10 +381,14 @@ spec:
             spec:
               forProvider:
                 roleRef: {name: {{ $publisher }}}
-                policy: {{ dict "Version" "2012-10-17" "Statement" (list
+                {{- $statements := list
                   (dict "Effect" "Allow" "Action" "s3:ListBucket" "Resource" (printf "arn:aws:s3:::%s" $bucket))
                   (dict "Effect" "Allow" "Action" (list "s3:GetObject" "s3:PutObject" "s3:DeleteObject") "Resource" (printf "arn:aws:s3:::%s/*" $bucket))
-                  (dict "Effect" "Allow" "Action" (list "cloudfront:CreateInvalidation" "cloudfront:GetInvalidation") "Resource" .)) | toJson | quote }}
+                  (dict "Effect" "Allow" "Action" (list "cloudfront:CreateInvalidation" "cloudfront:GetInvalidation") "Resource" .) }}
+                {{- with dig "artifacts" "repositories" list $platform }}
+                {{- $statements = append $statements (dict "Effect" "Allow" "Action" (list "ecr:BatchGetImage" "ecr:GetDownloadUrlForLayer") "Resource" .) }}
+                {{- end }}
+                policy: {{ dict "Version" "2012-10-17" "Statement" $statements | toJson | quote }}
             {{- end }}
             ---
             apiVersion: eks.aws.m.upbound.io/v1beta1
