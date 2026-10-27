@@ -663,27 +663,37 @@ class DeliveryContract(unittest.TestCase):
     chart = ROOT / "charts/delivery"
     example = ROOT / "examples/delivery/platform.yaml"
 
-    def test_one_freight_per_project_and_one_stage_per_environment(self):
+    def test_one_warehouse_per_unit_and_one_stage_per_environment(self):
         docs = render(self.chart, self.example)
-        warehouses = [d for d in docs if d["kind"] == "Warehouse"]
-        self.assertEqual(["example"], [w["metadata"]["name"] for w in warehouses])
-        self.assertEqual(
-            ["ghcr.io/example/assets", "ghcr.io/example/backend", "ghcr.io/example/database", "ghcr.io/example/portal", "ghcr.io/example/worker"],
-            [s["image"]["repoURL"] for s in warehouses[0]["spec"]["subscriptions"] if "image" in s],
-        )
+        warehouses = {d["metadata"]["name"]: d["spec"] for d in docs if d["kind"] == "Warehouse"}
+        self.assertEqual({"backend", "site", "worker"}, set(warehouses))
+        images = lambda unit: [s["image"]["repoURL"] for s in warehouses[unit]["subscriptions"] if "image" in s]
+        self.assertEqual(images("backend"), ["ghcr.io/example/backend", "ghcr.io/example/database"])
+        self.assertEqual(images("site"), ["ghcr.io/example/assets", "ghcr.io/example/portal"])
         stages = {d["metadata"]["name"]: d for d in docs if d["kind"] == "Stage"}
         self.assertEqual({"test", "production"}, set(stages))
-        self.assertEqual(stages["production"]["spec"]["requestedFreight"][0]["sources"], {"stages": ["test"]})
+        # One slot per unit the environment runs, each from its own Warehouse.
+        slots = stages["production"]["spec"]["requestedFreight"]
+        self.assertEqual([r["origin"]["name"] for r in slots], ["backend", "site", "worker"])
+        self.assertTrue(all(r["sources"] == {"stages": ["test"]} for r in slots))
+        only_backend = render(self.chart, self.example, {"environments": {"production": {"units": ["backend"]}}})
+        self.assertEqual([r["origin"]["name"] for r in resource(only_backend, "Stage", "production")["spec"]["requestedFreight"]], ["backend"])
+        # A promotion touches only the unit whose Freight it moves.
         steps = stages["production"]["spec"]["promotionTemplate"]["spec"]["steps"]
-        updates = [s["config"]["path"] for s in steps if s["uses"] == "yaml-update"]
-        self.assertEqual(updates, [f"./repo/environments/production/{s}.yaml" for s in ["api", "migrations", "worker"]])
-        sync = next(s for s in steps if s["uses"] == "argocd-update")
-        self.assertEqual(
-            [a["name"] for a in sync["config"]["apps"]],
-            ["example-backend-production", "example-site-production", "example-worker-production"],
-        )
+        gate = lambda unit: '${{ ctx.targetFreight.origin.name == "%s" }}' % unit
+        updates = {s["config"]["path"]: s.get("if") for s in steps if s["uses"] == "yaml-update"}
+        self.assertEqual(updates, {
+            "./repo/environments/production/api.yaml": gate("backend"),
+            "./repo/environments/production/migrations.yaml": gate("backend"),
+            "./repo/environments/production/worker.yaml": gate("worker"),
+        })
+        api = next(s for s in steps if s["uses"] == "yaml-update" and s["config"]["path"].endswith("/api.yaml"))
+        self.assertEqual(api["config"]["updates"][0]["value"], '${{ imageFrom("ghcr.io/example/backend", warehouse("backend")).Digest }}')
+        syncs = [(s["config"]["apps"][0]["name"], s["if"]) for s in steps if s["uses"] == "argocd-update"]
+        self.assertEqual(syncs, [("example-%s-production" % u, gate(u)) for u in ["backend", "site", "worker"]])
+        self.assertTrue(all("if" not in s for s in steps if s["uses"] in ("git-commit", "git-push")))
         # Health must not pin the shared branch to one promotion's commit.
-        self.assertTrue(all("sources" not in a for a in sync["config"]["apps"]))
+        self.assertTrue(all("sources" not in a for s in steps if s["uses"] == "argocd-update" for a in s["config"]["apps"]))
         self.assertFalse([d for d in docs if d["kind"] == "PromotionTask"])
         app = resource(docs, "ApplicationSet", "example-backend")["spec"]["template"]
         self.assertEqual(app["metadata"]["annotations"]["kargo.akuity.io/authorized-stage"], "example:{{ .environment }}")
@@ -701,7 +711,7 @@ class DeliveryContract(unittest.TestCase):
 
     def test_git_values_promote_files_at_the_freight_commit(self):
         docs = render(self.chart, self.example)
-        warehouse = resource(docs, "Warehouse", "example")["spec"]
+        warehouse = resource(docs, "Warehouse", "site")["spec"]
         self.assertIn(
             {"git": {"repoURL": "https://github.com/example/web.git", "branch": "main", "commitSelectionStrategy": "NewestFromBranch", "discoveryLimit": 20}},
             warehouse["subscriptions"],
@@ -713,12 +723,12 @@ class DeliveryContract(unittest.TestCase):
         stage = resource(docs, "Stage", "test")["spec"]["promotionTemplate"]["spec"]
         self.assertEqual(stage["vars"], [{"name": "stage", "value": "test"}])
         steps = stage["steps"]
-        clone = steps[1]["config"]
-        self.assertEqual(clone["repoURL"], "https://github.com/example/web.git")
-        self.assertEqual(clone["checkout"], [{"commit": '${{ commitFrom("https://github.com/example/web.git", warehouse("example")).ID }}', "path": "./sources/0"}])
+        clone = next(s for s in steps if s["uses"] == "git-clone" and s["config"]["repoURL"] == "https://github.com/example/web.git")
+        self.assertEqual(clone["if"], '${{ ctx.targetFreight.origin.name == "site" }}')
+        self.assertEqual(clone["config"]["checkout"], [{"commit": '${{ commitFrom("https://github.com/example/web.git", warehouse("site")).ID }}', "path": "./sources/site-0"}])
         parse = next(s for s in steps if s.get("as") == "read-portal-config")
         self.assertEqual(parse["uses"], "json-parse")
-        self.assertEqual(parse["config"]["path"], "./sources/0/configs/${{ vars.stage }}/portal.json")
+        self.assertEqual(parse["config"]["path"], "./sources/site-0/configs/${{ vars.stage }}/portal.json")
         self.assertEqual(parse["config"]["outputs"], [{"name": "value", "fromExpression": "$env"}])
         theme = next(s for s in steps if s.get("as") == "read-assets-source")
         self.assertEqual(theme["config"]["outputs"][0]["fromExpression"], "theme")
@@ -726,7 +736,7 @@ class DeliveryContract(unittest.TestCase):
         # One write carries the configuration and the digests: yaml-update cannot create keys a rewrite removed.
         self.assertEqual(
             writes["./repo/environments/test/portal.yaml"],
-            '${{ asYAML({"artifact": {"digest": imageFrom("ghcr.io/example/portal", warehouse("example")).Digest}, '
+            '${{ asYAML({"artifact": {"digest": imageFrom("ghcr.io/example/portal", warehouse("site")).Digest}, '
             '"config": outputs["read-portal-config"].value}) }}',
         )
         owned = [s["uses"] for s in steps if s["config"].get("path") == "./repo/environments/test/portal.yaml"]
@@ -738,11 +748,9 @@ class DeliveryContract(unittest.TestCase):
     def test_warehouse_uses_supported_tag_selection(self):
         # Kargo >= 1.11 rejects the deprecated allowTags field at discovery time.
         docs = render(self.chart, self.example)
-        filters = {
-            s["image"]["repoURL"]: s["image"]["allowTagsRegexes"]
-            for s in resource(docs, "Warehouse", "example")["spec"]["subscriptions"] if "image" in s
-        }
-        self.assertTrue(all("allowTags" not in s.get("image", {}) for s in resource(docs, "Warehouse")["spec"]["subscriptions"]))
+        subscriptions = [s for d in docs if d["kind"] == "Warehouse" for s in d["spec"]["subscriptions"]]
+        filters = {s["image"]["repoURL"]: s["image"]["allowTagsRegexes"] for s in subscriptions if "image" in s}
+        self.assertTrue(all("allowTags" not in s.get("image", {}) for s in subscriptions))
         self.assertEqual(filters["ghcr.io/example/backend"], [r"^v?[0-9]+\.[0-9]+\.[0-9]+$"])
         self.assertEqual(filters["ghcr.io/example/worker"], [r"^[0-9a-f]{7}$"])
         render(

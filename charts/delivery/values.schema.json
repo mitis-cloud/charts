@@ -33,6 +33,7 @@
     "releaseUnits": {"type": "object", "minProperties": 1, "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {
       "type": "object", "additionalProperties": false, "required": ["services"], "properties": {
         "allowTags": {"type": "string", "minLength": 1, "description": "Image-tag regular expression for this unit's Warehouse, overriding discovery.allowTags."},
+        "criteria": {"type": "string", "minLength": 1, "description": "Freight creation criteria for this unit's Warehouse: a Kargo expression every new Freight must satisfy."},
         "services": {"type": "object", "minProperties": 1, "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {
           "type": "object", "additionalProperties": false, "required": ["chart"], "properties": {
             "chart": {"$ref": "#/definitions/name"}, "releaseName": {"$ref": "#/definitions/name"},
@@ -58,8 +59,7 @@
       "match": {"type": "string", "minLength": 1}, "color": {"type": "string", "pattern": "^(#[0-9A-Fa-f]{6}|[a-z]+)$"}
     }}},
     "discovery": {"type": "object", "additionalProperties": false, "properties": {
-      "interval": {"type": "string", "pattern": "^[1-9][0-9]*(s|m|h)$"}, "allowTags": {"type": "string", "minLength": 1}, "limit": {"type": "integer", "minimum": 1},
-      "criteria": {"type": "string", "minLength": 1, "description": "Freight creation criteria: a Kargo expression every new Freight must satisfy."}
+      "interval": {"type": "string", "pattern": "^[1-9][0-9]*(s|m|h)$"}, "allowTags": {"type": "string", "minLength": 1}, "limit": {"type": "integer", "minimum": 1}
     }}
   },
   "definitions": {
