@@ -726,7 +726,6 @@ class DeliveryContract(unittest.TestCase):
         # One write carries the configuration and the digests: yaml-update cannot create keys a rewrite removed.
         self.assertEqual(
             writes["./repo/environments/test/portal.yaml"],
-            '# Written by promotion from the source repository; edit the source instead.\n'
             '${{ asYAML({"artifact": {"digest": imageFrom("ghcr.io/example/portal", warehouse("example")).Digest}, '
             '"config": outputs["read-portal-config"].value}) }}',
         )
