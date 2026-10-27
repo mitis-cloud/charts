@@ -128,7 +128,7 @@ spec:
         {{- range $unitName := $promoted }}
         {{- range $serviceName, $service := (index $root.Values.releaseUnits $unitName).services }}
         {{- with $service.gitValues }}
-        {{- $written := list }}
+        {{- $written := dict }}
         {{- range $key := keys . | sortAlpha }}
         {{- $value := index $service.gitValues $key }}
         {{- $alias := printf "read-%s-%s" $serviceName (lower $key) }}
@@ -139,19 +139,30 @@ spec:
             outputs:
               - name: value
                 fromExpression: {{ $value.expression | default "$env" | quote }}
-        {{- $written = append $written (printf "%q: outputs[%q].value" $key $alias) }}
+        {{- $_ := set $written $key (printf "outputs[%q].value" $alias) }}
+        {{- end }}
+        {{- /* Image digests go into the same document: yaml-update cannot create keys the rewrite removed. */}}
+        {{- range $path, $image := $service.images }}
+        {{- $node := $written }}
+        {{- $keys := splitList "." $path }}
+        {{- range $part := initial $keys }}
+        {{- if not (hasKey $node $part) }}{{ $_ := set $node $part (dict) }}{{ end }}
+        {{- $node = index $node $part }}
+        {{- end }}
+        {{- $_ := set $node (last $keys) (printf "imageFrom(%q, warehouse(%q)).Digest" $image $root.Values.project) }}
         {{- end }}
         {{- /* The service owns its environment file: rewritten whole, so keys removed at the source disappear. */}}
         - uses: file-write
           config:
             path: ./repo/{{ $root.Values.git.environments }}/{{ $envName }}/{{ $serviceName }}.yaml
-            contents: {{ printf "# Written by promotion from the source repository; edit the source instead.\n${{ asYAML({%s}) }}" (join ", " $written) | quote }}
+            contents: {{ printf "# Written by promotion from the source repository; edit the source instead.\n${{ asYAML(%s) }}" (include "mitis.delivery.exprMap" $written) | quote }}
             overwrite: true
         {{- end }}
         {{- end }}
         {{- end }}
         {{- range $unitName := $promoted }}
         {{- range $serviceName, $service := (index $root.Values.releaseUnits $unitName).services }}
+        {{- if not $service.gitValues }}
         {{- with $service.images }}
         - uses: yaml-update
           config:
@@ -161,6 +172,7 @@ spec:
               - key: {{ $key | quote }}
                 value: {{ printf "${{ imageFrom(%q, warehouse(%q)).Digest }}" $image $root.Values.project | quote }}
               {{- end }}
+        {{- end }}
         {{- end }}
         {{- end }}
         {{- end }}

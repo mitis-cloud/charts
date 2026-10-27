@@ -676,7 +676,7 @@ class DeliveryContract(unittest.TestCase):
         self.assertEqual(stages["production"]["spec"]["requestedFreight"][0]["sources"], {"stages": ["test"]})
         steps = stages["production"]["spec"]["promotionTemplate"]["spec"]["steps"]
         updates = [s["config"]["path"] for s in steps if s["uses"] == "yaml-update"]
-        self.assertEqual(updates, [f"./repo/environments/production/{s}.yaml" for s in ["api", "migrations", "assets", "portal", "worker"]])
+        self.assertEqual(updates, [f"./repo/environments/production/{s}.yaml" for s in ["api", "migrations", "worker"]])
         sync = next(s for s in steps if s["uses"] == "argocd-update")
         self.assertEqual(
             [a["name"] for a in sync["config"]["apps"]],
@@ -723,13 +723,15 @@ class DeliveryContract(unittest.TestCase):
         theme = next(s for s in steps if s.get("as") == "read-assets-source")
         self.assertEqual(theme["config"]["outputs"][0]["fromExpression"], "theme")
         writes = {s["config"]["path"]: s["config"]["contents"] for s in steps if s["uses"] == "file-write"}
+        # One write carries the configuration and the digests: yaml-update cannot create keys a rewrite removed.
         self.assertEqual(
             writes["./repo/environments/test/portal.yaml"],
-            '# Written by promotion from the source repository; edit the source instead.\n${{ asYAML({"config": outputs["read-portal-config"].value}) }}',
+            '# Written by promotion from the source repository; edit the source instead.\n'
+            '${{ asYAML({"artifact": {"digest": imageFrom("ghcr.io/example/portal", warehouse("example")).Digest}, '
+            '"config": outputs["read-portal-config"].value}) }}',
         )
-        # The environment file is rewritten before the digest is set in it, and no extra values file exists.
-        order = [(s["uses"], s["config"].get("path")) for s in steps if s["config"].get("path") == "./repo/environments/test/portal.yaml"]
-        self.assertEqual([u for u, _ in order], ["file-write", "yaml-update"])
+        owned = [s["uses"] for s in steps if s["config"].get("path") == "./repo/environments/test/portal.yaml"]
+        self.assertEqual(owned, ["file-write"])
         files = self.expanded_sources(docs, "site", "test")[0]["helm"]["valueFiles"]
         self.assertEqual(files[-1], "$values/environments/test/assets.yaml")
         self.assertFalse([f for f in files if "promoted" in f])

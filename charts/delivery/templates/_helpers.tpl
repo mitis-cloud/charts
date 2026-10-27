@@ -67,3 +67,17 @@
 {{- end -}}
 {{- toJson $out -}}
 {{- end -}}
+
+{{- /* Renders a nested map whose leaves are Kargo expressions as an expr-lang map literal. */}}
+{{- define "mitis.delivery.exprMap" -}}
+{{- $parts := list -}}
+{{- range $key := keys . | sortAlpha -}}
+{{- $value := index $ $key -}}
+{{- if kindIs "map" $value -}}
+{{- $parts = append $parts (printf "%q: %s" $key (include "mitis.delivery.exprMap" $value)) -}}
+{{- else -}}
+{{- $parts = append $parts (printf "%q: %s" $key $value) -}}
+{{- end -}}
+{{- end -}}
+{{- printf "{%s}" (join ", " $parts) -}}
+{{- end -}}
