@@ -1,0 +1,70 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: objectstorages.aws.mitis.cloud
+  labels:
+    mitis.cloud/provider: aws
+spec:
+  compositeTypeRef:
+    apiVersion: mitis.cloud/v1alpha1
+    kind: ObjectStorage
+  mode: Pipeline
+  pipeline:
+    - step: platform
+      functionRef:
+        name: crossplane-contrib-function-environment-configs
+      input:
+        apiVersion: environmentconfigs.fn.crossplane.io/v1beta1
+        kind: Input
+        spec:
+          environmentConfigs:
+            - type: Reference
+              ref: {name: mitis-platform}
+    - step: render
+      functionRef:
+        name: crossplane-contrib-function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource }}
+            {{- $spec := $xr.spec }}
+            {{- $platform := index .context "apiextensions.crossplane.io/environment" }}
+            {{- $observed := .observed.resources | default dict }}
+            {{- $name := $xr.metadata.name }}
+            {{- $bucket := $spec.name }}
+            {{- $resources := list
+                (dict "id" "bucket" "kind" "Bucket" "forProvider" (dict "forceDestroy" false "tags" ($spec.tags | default dict)))
+                (dict "id" "public-access" "kind" "BucketPublicAccessBlock" "forProvider" (dict "bucket" $bucket "blockPublicAcls" true "blockPublicPolicy" true "ignorePublicAcls" true "restrictPublicBuckets" true))
+                (dict "id" "encryption" "kind" "BucketServerSideEncryptionConfiguration" "forProvider" (dict "bucket" $bucket "rule" (list (dict "applyServerSideEncryptionByDefault" (dict "sseAlgorithm" "AES256") "blockedEncryptionTypes" (list "SSE-C") "bucketKeyEnabled" false))))
+                (dict "id" "versioning" "kind" "BucketVersioning" "forProvider" (dict "bucket" $bucket "versioningConfiguration" (dict "status" (ternary "Enabled" "Suspended" (dig "versioning" true $spec))))) }}
+            {{- with $spec.expireAfterDays }}
+            {{- $rule := dict "id" "object-expiration" "status" "Enabled" "filter" (list (dict "prefix" "")) "expiration" (list (dict "days" .)) }}
+            {{- $resources = append $resources (dict "id" "expiry" "kind" "BucketLifecycleConfiguration" "forProvider" (dict "bucket" $bucket "rule" (list $rule))) }}
+            {{- end }}
+            {{- range $resources }}
+            ---
+            apiVersion: s3.aws.m.upbound.io/v1beta1
+            kind: {{ .kind }}
+            metadata:
+              name: {{ $name }}-{{ .id }}
+              namespace: {{ $xr.metadata.namespace }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: {{ .id }}
+                crossplane.io/external-name: {{ $bucket }}
+            spec:
+              forProvider: {{ merge (dict "region" $platform.region) .forProvider | toJson }}
+            {{- end }}
+            {{- with dig "bucket" "resource" "status" "atProvider" "arn" "" $observed }}
+            ---
+            apiVersion: mitis.cloud/v1alpha1
+            kind: ObjectStorage
+            status:
+              id: {{ . | quote }}
+              name: {{ $bucket | quote }}
+            {{- end }}
+    - step: ready
+      functionRef:
+        name: crossplane-contrib-function-auto-ready

@@ -1,0 +1,46 @@
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: objectstorages.mitis.cloud
+spec:
+  group: mitis.cloud
+  names:
+    kind: ObjectStorage
+    plural: objectstorages
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  description: Stable bucket name used by application protocols.
+                  minLength: 3
+                  maxLength: 63
+                  pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$'
+                  x-kubernetes-validations:
+                    - rule: self == oldSelf
+                      message: Storage cannot be renamed.
+                versioning:
+                  type: boolean
+                  default: true
+                expireAfterDays:
+                  type: integer
+                  minimum: 1
+                  description: Delete current objects after this many days; omitted means no expiry.
+                tags:
+                  type: object
+                  additionalProperties: {type: string}
+            status:
+              type: object
+              properties:
+                id: {type: string}
+                name: {type: string}

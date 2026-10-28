@@ -1,0 +1,8 @@
+apiVersion: mitis.cloud/v1alpha1
+kind: ObjectStorage
+metadata:
+  name: lakehouse
+  namespace: example
+spec:
+  name: example-lakehouse
+  versioning: true

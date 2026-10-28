@@ -1,0 +1,29 @@
+apiVersion: iam.aws.m.upbound.io/v1beta1
+kind: Role
+metadata:
+  name: engine-role
+  namespace: example
+  annotations:
+    crossplane.io/composition-resource-name: role
+    crossplane.io/external-name: existing_engine
+status:
+  atProvider:
+    arn: arn:aws:iam::000000000000:role/existing_engine
+---
+apiVersion: iam.aws.m.upbound.io/v1beta1
+kind: Policy
+metadata:
+  name: engine-policy
+  namespace: example
+  annotations:
+    crossplane.io/composition-resource-name: policy
+    crossplane.io/external-name: existing_engine
+---
+apiVersion: iam.aws.m.upbound.io/v1beta1
+kind: RolePolicy
+metadata:
+  name: engine-node-workers
+  namespace: example
+  annotations:
+    crossplane.io/composition-resource-name: node-workers
+    crossplane.io/external-name: existing_engine-node-assume

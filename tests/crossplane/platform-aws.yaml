@@ -17,6 +17,16 @@ data:
   region: eu-west-1
   cluster:
     name: example-cluster
+  identity:
+    oidcProvider: arn:aws:iam::000000000000:oidc-provider/oidc.eks.eu-west-1.amazonaws.com/id/EXAMPLE
+    oidcIssuer: oidc.eks.eu-west-1.amazonaws.com/id/EXAMPLE
+    nodeRoles:
+      workers:
+        name: example-workers
+        arn: arn:aws:iam::000000000000:role/example-workers
+  objectStorage:
+    shared-input:
+      id: arn:aws:s3:::shared-input
   artifacts:
     repositories: ['arn:aws:ecr:eu-west-1:000000000000:repository/portal-*']
   dns:

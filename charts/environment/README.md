@@ -21,6 +21,8 @@ An environment is one application namespace and everything its services share: t
 | `secrets.generated` | Values by remote key suffix: `password` (default 32 characters with symbols), `string` (letters and digits, `length` required), `username` (lowercase letters), `manual` (a `-` placeholder a person replaces) or `value` (fixed content). Each is generated and published only when its remote key does not exist, so existing values are kept. |
 | `webapps.<name>` | A static site at `hostname` (inside a platform DNS zone). `mode: application` (default) routes non-file paths to the single-page application and caches only `cachedPaths` (default `/assets/*`); `mode: files` serves stored files as they are, all cached, and ignores maintenance. It follows the environment's maintenance switch and body, and publishes its bucket and CDN identifiers as `<prefix><name>-website-bucket-id` and `<prefix><name>-cloudfront-website-id` for upload tooling. The `<name>-outputs` Secret holds the same `bucket` and `distribution` in the namespace, and the `<name>-publisher` service account may upload to the bucket, invalidate the distribution and read the platform's `artifacts.repositories`, nothing else. The [webapp chart](../webapp/README.md) publishes builds with it. Requires `secrets`. |
 | `databases.<key>` | A PostgreSQL database on the platform's shared instance. Its physical `name` defaults to `<namespace>-<key>` and can preserve an existing name. Configure `extensions`, `schemas` (per schema `operator` and `reader` access: `full`, `read`, `read-execute` or `none`; `existingFunctions`, `adminMaintain`) and `accounts` (name to `admin`, `operator` or `reader` group). |
+| `objectStorage.<key>` | A private bucket with a stable `name`, encryption, `versioning` (default true), optional `expireAfterDays` for current objects, and optional `tags`. Nonempty buckets are never force-deleted. |
+| `identities.<key>` | Cloud access for the listed `serviceAccounts`. `storage` grants select a local ObjectStorage by `name`, with `access: read` or `readWrite`; `external: true` selects a platform-owned storage catalog entry. `listStorage` permits account-wide bucket discovery. `allowNodeAssumption` permits the cluster's configured workers to assume this identity. Both permissions default false. |
 
 See [the example](../../examples/environment/values.yaml) and [values.schema.json](values.schema.json).
 
@@ -52,6 +54,16 @@ Removing the release or its Argo CD Application leaves the `Environment` in plac
     region: eu-west-1                 # needed for webapps
     cluster:
       name: example-cluster           # EKS cluster, for webapp publisher identities
+    identity:                         # needed for workload identities using IRSA
+      oidcProvider: arn:aws:iam::000000000000:oidc-provider/oidc.eks.eu-west-1.amazonaws.com/id/EXAMPLE
+      oidcIssuer: oidc.eks.eu-west-1.amazonaws.com/id/EXAMPLE
+      nodeRoles:                      # optional; only used with allowNodeAssumption
+        workers:
+          name: example-workers
+          arn: arn:aws:iam::000000000000:role/example-workers
+    objectStorage:                    # shared buckets remain with their existing owner
+      shared-input:
+        id: arn:aws:s3:::shared-input
     artifacts:
       repositories:                   # optional: ECR repositories publishers may read builds from
         - arn:aws:ecr:eu-west-1:000000000000:repository/portal-*
@@ -94,6 +106,7 @@ Removing the release or its Argo CD Application leaves the `Environment` in plac
 
 - For databases, a provider-sql `ClusterProviderConfig` with superuser access to the instance, and a secret store that External Secrets can write (PushSecret).
 - For webapps on AWS, the S3, CloudFront, ACM, Route53, IAM and EKS providers with a `default` `ClusterProviderConfig` allowed to manage buckets, distributions, functions, certificates and records in those zones, `<namespace>-<webapp>-publisher` roles (including passing them to EKS) and the cluster's Pod Identity associations.
+- For object storage and workload identities, the S3 and IAM providers with permission to manage the selected buckets, roles, policies and attachments. Node assumption additionally requires managing an inline policy on the configured worker role. Source the identity and external-storage facts from the infrastructure that owns them.
 
 The package declares every function and provider it can use. A platform may install it with `skipDependencyResolution` and install only what its clusters need.
 
@@ -112,3 +125,7 @@ Crossplane takes over an existing object only when it already carries the annota
 | A webapp's buckets, identity, function, certificate, distribution and records | Pre-create each managed resource with its external name, the `<webapp>-<id>` name the composition uses, and `crossplane.io/composition-resource-name: <id>` |
 
 Databases, roles and grants are adopted by name with no annotation: existing passwords stay, because they are read from the existing remote keys. Then stop the previous owner from managing them without deleting them.
+
+ObjectStorage composes `bucket`, `public-access`, `encryption`, `versioning` and, when configured, `expiry`; their managed resources are named `<key>-<id>`. Each external name is the declared bucket name. WorkloadIdentity composes `role`, `policy`, `attachment`, `account-<serviceAccount>` and optional `node-<worker-key>`. Adopt existing IAM roles and policies by their names, attachments by `<role>/<policy-arn>`, and inline node policies by policy name. The composition preserves the observed external names. Observe existing resources and verify their state before enabling management.
+
+WorkloadIdentity owns the ServiceAccount's IRSA annotation. Configure workload charts to use these existing accounts. A chart that always emits its account can share the object through server-side apply only if it omits the cloud annotation and does not control its owner references; the field ownership must remain disjoint. Existing accounts need `crossplane.io/composition-resource-name: account-<serviceAccount>` before adoption. Storage and identity expose their observed provider identifiers in `status.id`; consumers grant access by logical storage reference, not by copying those identifiers. Missing storage observations fail reconciliation before changing permissions.

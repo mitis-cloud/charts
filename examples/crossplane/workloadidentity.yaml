@@ -1,0 +1,15 @@
+apiVersion: mitis.cloud/v1alpha1
+kind: WorkloadIdentity
+metadata:
+  name: engine
+  namespace: example
+spec:
+  serviceAccounts: [engine]
+  storage:
+    - name: lakehouse
+      access: readWrite
+    - name: shared-input
+      external: true
+      access: read
+  allowNodeAssumption: true
+  listStorage: true
