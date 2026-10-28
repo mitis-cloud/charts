@@ -263,9 +263,8 @@ spec:
                       functionArn: {{ $functionArn }}
                   {{- end }}
                 {{- $cached := ternary ($spec.cachedPaths | default (list "/assets/*")) list $application }}
-                {{- if not $cached }}
-                orderedCacheBehavior: []
-                {{- else }}
+                {{- /* The provider omits empty lists; emitting one here causes a reconcile loop. */}}
+                {{- if $cached }}
                 orderedCacheBehavior:
                   {{- range $path := $cached }}
                   - pathPattern: {{ $path | quote }}
