@@ -1,0 +1,164 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: workloadidentities.aws.mitis.cloud
+  labels:
+    mitis.cloud/provider: aws
+spec:
+  compositeTypeRef:
+    apiVersion: mitis.cloud/v1alpha1
+    kind: WorkloadIdentity
+  mode: Pipeline
+  pipeline:
+    - step: platform
+      functionRef:
+        name: crossplane-contrib-function-environment-configs
+      input:
+        apiVersion: environmentconfigs.fn.crossplane.io/v1beta1
+        kind: Input
+        spec:
+          environmentConfigs:
+            - type: Reference
+              ref: {name: mitis-platform}
+    - step: render
+      functionRef:
+        name: crossplane-contrib-function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource }}
+            {{- $spec := $xr.spec }}
+            {{- $ns := $xr.metadata.namespace }}
+            {{- $name := $xr.metadata.name }}
+            {{- $platform := index .context "apiextensions.crossplane.io/environment" }}
+            {{- $observed := .observed.resources | default dict }}
+            {{- $extra := .extraResources | default dict }}
+            {{- $external := dict }}
+            {{- range $id, $resource := $observed }}
+            {{- with dig "resource" "metadata" "annotations" "crossplane.io/external-name" "" $resource }}{{ $_ := set $external $id . }}{{ end }}
+            {{- end }}
+            {{- $roleName := get $external "role" | default (printf "%s-%s" $ns $name) }}
+            {{- $roleArn := dig "role" "resource" "status" "atProvider" "arn" "" $observed }}
+            {{- $requirements := dict }}
+            {{- $statements := list }}
+            {{- $resolved := true }}
+            {{- range $spec.storage }}
+            {{- $id := "" }}
+            {{- if .external }}
+            {{- $entry := dig "objectStorage" .name dict $platform }}
+            {{- $id = $entry.id | default "" }}
+            {{- if not $id }}{{ fail (printf "platform object storage %s is not configured" .name) }}{{ end }}
+            {{- else }}
+            {{- $key := printf "storage-%s" .name }}
+            {{- $_ := set $requirements $key (dict "apiVersion" "mitis.cloud/v1alpha1" "kind" "ObjectStorage" "namespace" $ns "matchName" .name) }}
+            {{- if hasKey $extra $key }}
+            {{- range (index $extra $key).items }}{{ $id = dig "resource" "status" "id" "" . }}{{ end }}
+            {{- if not $id }}{{ fail (printf "ObjectStorage %s/%s has no observed identifier yet" $ns .name) }}{{ end }}
+            {{- else }}{{ $resolved = false }}{{ end }}
+            {{- end }}
+            {{- $actions := list "s3:GetObject" "s3:ListBucket" }}
+            {{- if eq .access "readWrite" }}{{ $actions = concat $actions (list "s3:PutObject" "s3:DeleteObject") }}{{ end }}
+            {{- if $id }}{{ $statements = append $statements (dict "Effect" "Allow" "Action" $actions "Resource" (list $id (printf "%s/*" $id))) }}{{ end }}
+            {{- end }}
+            {{- with $requirements }}
+            ---
+            apiVersion: meta.gotemplating.fn.crossplane.io/v1alpha1
+            kind: ExtraResources
+            requirements: {{ toJson . }}
+            {{- end }}
+            {{- if $resolved }}
+            {{- $issuer := $platform.identity.oidcIssuer }}
+            {{- $subjects := list }}
+            {{- range $spec.serviceAccounts }}{{ $subjects = append $subjects (printf "system:serviceaccount:%s:%s" $ns .) }}{{ end }}
+            {{- $trust := list (dict "Effect" "Allow" "Action" "sts:AssumeRoleWithWebIdentity" "Principal" (dict "Federated" $platform.identity.oidcProvider) "Condition" (dict "StringEquals" (dict (printf "%s:sub" $issuer) $subjects (printf "%s:aud" $issuer) "sts.amazonaws.com"))) }}
+            {{- if $spec.allowNodeAssumption }}
+            {{- if not $platform.identity.nodeRoles }}{{ fail "node assumption requires platform worker identities" }}{{ end }}
+            {{- $nodes := list }}{{ range $platform.identity.nodeRoles }}{{ $nodes = append $nodes .arn }}{{ end }}
+            {{- $trust = append $trust (dict "Effect" "Allow" "Action" "sts:AssumeRole" "Principal" (dict "AWS" $nodes)) }}
+            {{- end }}
+            {{- if $spec.listStorage }}{{ $statements = append $statements (dict "Effect" "Allow" "Action" (list "s3:ListAllMyBuckets") "Resource" "*") }}{{ end }}
+            ---
+            apiVersion: iam.aws.m.upbound.io/v1beta1
+            kind: Role
+            metadata:
+              name: {{ $name }}-role
+              namespace: {{ $ns }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: role
+                crossplane.io/external-name: {{ $roleName }}
+            spec:
+              forProvider:
+                assumeRolePolicy: {{ dict "Version" "2012-10-17" "Statement" $trust | toJson | quote }}
+                tags: {{ $spec.tags | default dict | toJson }}
+            ---
+            apiVersion: iam.aws.m.upbound.io/v1beta1
+            kind: Policy
+            metadata:
+              name: {{ $name }}-policy
+              namespace: {{ $ns }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: policy
+                crossplane.io/external-name: {{ get $external "policy" | default $roleName }}
+            spec:
+              forProvider:
+                policy: {{ dict "Version" "2012-10-17" "Statement" $statements | toJson | quote }}
+                tags: {{ $spec.tags | default dict | toJson }}
+            ---
+            apiVersion: iam.aws.m.upbound.io/v1beta1
+            kind: RolePolicyAttachment
+            metadata:
+              name: {{ $name }}-attachment
+              namespace: {{ $ns }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: attachment
+                {{- with get $external "attachment" }}
+                crossplane.io/external-name: {{ . }}
+                {{- end }}
+            spec:
+              forProvider:
+                roleRef: {name: {{ $name }}-role}
+                policyArnRef: {name: {{ $name }}-policy}
+            {{- if $roleArn }}
+            {{- range $spec.serviceAccounts }}
+            ---
+            apiVersion: v1
+            kind: ServiceAccount
+            metadata:
+              name: {{ . }}
+              namespace: {{ $ns }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: account-{{ . }}
+                gotemplating.fn.crossplane.io/ready: "True"
+                eks.amazonaws.com/role-arn: {{ $roleArn | quote }}
+            {{- end }}
+            {{- if $spec.allowNodeAssumption }}
+            {{- range $key, $node := $platform.identity.nodeRoles }}
+            {{- $id := printf "node-%s" $key }}
+            ---
+            apiVersion: iam.aws.m.upbound.io/v1beta1
+            kind: RolePolicy
+            metadata:
+              name: {{ $name }}-{{ $id }}
+              namespace: {{ $ns }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: {{ $id }}
+                crossplane.io/external-name: {{ get $external $id | default (printf "%s-node-assume" $roleName) }}
+            spec:
+              forProvider:
+                role: {{ $node.name }}
+                policy: {{ dict "Version" "2012-10-17" "Statement" (list (dict "Effect" "Allow" "Action" "sts:AssumeRole" "Resource" $roleArn)) | toJson | quote }}
+            {{- end }}
+            {{- end }}
+            ---
+            apiVersion: mitis.cloud/v1alpha1
+            kind: WorkloadIdentity
+            status:
+              id: {{ $roleArn | quote }}
+            {{- end }}
+            {{- end }}
+    - step: ready
+      functionRef:
+        name: crossplane-contrib-function-auto-ready

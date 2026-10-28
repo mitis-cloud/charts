@@ -1,8 +1,8 @@
 # Prerequisites and boundary
 
-> This page describes the current releases. The boundary is moving: Mitis will implement cloud capabilities itself through Crossplane, with an `environment` chart for environment-wide resources. See [ADR 0001](adr/0001-implement-cloud-capabilities-with-crossplane.md), [ADR 0002](adr/0002-separate-environment-chart.md) and the [roadmap](../ROADMAP.md#cloud-provider-profiles).
+> The environment chart implements cloud capabilities through the Crossplane platform package. See [ADR 0001](adr/0001-implement-cloud-capabilities-with-crossplane.md) and [ADR 0002](adr/0002-separate-environment-chart.md).
 
-Mitis charts are opinionated. Adopting them means adopting a defined platform: a set of controllers, CRDs and infrastructure conventions that must already exist in the cluster and the cloud account. The charts render application resources against that platform. They never install it, configure it or create cloud resources.
+Mitis charts are opinionated. Adopting them means adopting a defined platform: a set of controllers, CRDs and infrastructure conventions that must already exist in the cluster and the cloud account. Service and delivery charts use that platform; the environment chart requests the resources its services share through Crossplane. Charts do not install their prerequisite controllers.
 
 Read this page before your first deployment. The [integration guide](integrations.md) goes deeper into each contract.
 
@@ -14,13 +14,13 @@ Read this page before your first deployment. The [integration guide](integration
 | Services, Ingresses, HTTPRoutes | IngressClasses and IngressClassParams, Gateways and listeners, load balancers, certificates, DNS zones, WAF |
 | ExternalSecrets, ConfigMaps, generated Secrets | The ClusterSecretStore, the secret backend and its contents, and read access to it |
 | Shared-filesystem PersistentVolumeClaims | Storage classes, CSI drivers, filesystems, access points and pre-existing PersistentVolumes |
-| ServiceAccounts, Roles and RoleBindings for namespace-scoped API access | Cloud identities (IAM roles and workload identity), and accounts bound to them |
+| ServiceAccounts, Roles and RoleBindings; environment storage and workload identity composites | Crossplane providers, provider permissions, cluster identity and shared external storage facts |
 | Scheduling constraints: placement, zones, architecture | Node pools with matching labels and taints, spread across zones |
 | Argo CD ApplicationSets and AppProjects; Kargo Projects, Warehouses, Stages and PromotionTasks (`delivery`) | Argo CD and Kargo installations, registered clusters, namespaces, Git/OCI/image credentials |
 
 Rules that follow from this:
 
-- **No cloud resources.** The charts never create or modify load balancers, certificates, DNS zones, IAM roles, secret values, filesystems or node pools. Create these with your infrastructure tooling (Terraform, OpenTofu, Pulumi, or a cloud console) before deploying.
+- **Ownership follows lifecycle.** Environment composites manage environment-owned databases, generated values, static sites, object storage and workload identities. Shared clusters, filesystems, DNS zones, secret backends and resources with external consumers remain with the platform's infrastructure owner.
 - **No controller lifecycle.** The charts have no Helm dependencies on any controller chart. They don't install, configure or upgrade controllers or CRDs, even when a feature needs one.
 - **Namespace-scoped by design.** The service chart renders no cluster-scoped objects; its permissions are namespace-scoped. The delivery chart's Kargo `Project` and the environment chart's `Environment` are the only cluster-scoped objects the charts render. Cluster-wide grants, IngressClasses, storage classes and secret stores belong to the platform.
 - **Existing names are references.** Values such as `secretStore`, `sharedStorage`, `placement`, `account` and the ingress class naming convention point at objects that must already exist. A wrong name renders fine and fails at runtime.
@@ -50,7 +50,7 @@ The service chart's defaults switch some of these on. A **default** in the "Trig
 | Node pools | `placement` other than `any` | Nodes labelled `env=<pool>` with a matching `env=<pool>:NoSchedule` taint |
 | Zone spread | `availability.zones` | Nodes labelled `topology.kubernetes.io/zone` across at least that many zones, with room to schedule in each |
 | Architecture | `architecture` | Nodes with the matching `kubernetes.io/arch` |
-| Workload identity | `account` or `tokens` | An existing ServiceAccount bound to the cloud identity, and the admission or token injection your cloud uses (for example IRSA or EKS Pod Identity) |
+| Workload identity | `account` or `tokens` | A ServiceAccount bound by an environment WorkloadIdentity or the infrastructure owner, and the cloud's admission/token injection |
 | [Argo CD](https://argo-cd.readthedocs.io) | `render.engine: argo` | Argo CD applying the rendered sync waves and hooks |
 
 ### Delivery chart

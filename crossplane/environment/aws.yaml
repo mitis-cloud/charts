@@ -302,6 +302,19 @@ spec:
                 {{- end }}
             {{- end }}
             {{- end }}
+            {{- range $kind, $entries := dict "ObjectStorage" $spec.objectStorage "WorkloadIdentity" $spec.identities }}
+            {{- range $key, $entry := $entries }}
+            ---
+            apiVersion: mitis.cloud/v1alpha1
+            kind: {{ $kind }}
+            metadata:
+              name: {{ $key }}
+              namespace: {{ $namespace }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: {{ $kind | lower }}-{{ $key }}
+            spec: {{ $entry | toJson }}
+            {{- end }}
+            {{- end }}
     - step: ready
       functionRef:
         name: crossplane-contrib-function-auto-ready
