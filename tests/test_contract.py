@@ -762,6 +762,22 @@ class DeliveryContract(unittest.TestCase):
             success=False,
         )
 
+    def test_vendor_tag_fields_remain_digest_pinned_in_both_promotion_paths(self):
+        values = yaml.safe_load(self.example.read_text())
+        service = values["releaseUnits"]["backend"]["services"]["api"]
+        service["images"] = {"plugin.image.tag": "ghcr.io/example/backend"}
+        expression = 'imageFrom("ghcr.io/example/backend", warehouse("backend"))'
+        pinned = f'{expression}.Tag + "@" + {expression}.Digest'
+        steps = resource(render(self.chart, values), "Stage", "test")["spec"]["promotionTemplate"]["spec"]["steps"]
+        update = next(s for s in steps if s["uses"] == "yaml-update" and s["config"]["path"].endswith("/api.yaml"))
+        self.assertEqual(update["config"]["updates"], [{"key": "plugin.image.tag", "value": "${{ " + pinned + " }}"}])
+        self.assertEqual(update["if"], '${{ ctx.targetFreight.origin.name == "backend" }}')
+        service["gitValues"] = {"config": {"repository": "https://github.com/example/backend.git", "path": "config.yaml"}}
+        steps = resource(render(self.chart, values), "Stage", "test")["spec"]["promotionTemplate"]["spec"]["steps"]
+        write = next(s for s in steps if s["uses"] == "file-write" and s["config"]["path"].endswith("/api.yaml"))
+        self.assertIn('"plugin": {"image": {"tag": ' + pinned + '}}', write["config"]["contents"])
+        self.assertEqual(write["if"], update["if"])
+
     def test_unknown_references_cycles_and_exclusions(self):
         for invalid in [
             {"environments": {"production": {"upstream": ["missing"]}}},
@@ -955,6 +971,20 @@ class DeliveryContract(unittest.TestCase):
             {"environments": {"test": {"charts": {"environment": None}}}},
             success=False,
         )
+
+    def test_operator_permissions_are_explicit_and_environment_scoped(self):
+        grants = [
+            {"group": "apiextensions.k8s.io", "kind": "CustomResourceDefinition"},
+            {"group": "rbac.authorization.k8s.io", "kind": "ClusterRole"},
+        ]
+        docs = render(self.chart, self.example, {"environments": {"test": {"clusterResources": grants}}})
+        self.assertEqual(
+            resource(docs, "AppProject", "example-test")["spec"]["clusterResourceWhitelist"],
+            [{"group": "mitis.cloud", "kind": "Environment"}] + grants,
+        )
+        self.assertEqual(resource(docs, "AppProject", "example-production")["spec"]["clusterResourceWhitelist"], [])
+        for grant in [{"group": "*", "kind": "ClusterRole"}, {"group": "rbac.authorization.k8s.io", "kind": "*"}]:
+            render(self.chart, self.example, {"environments": {"test": {"clusterResources": [grant]}}}, success=False)
 
     def test_package_and_lint(self):
         with tempfile.TemporaryDirectory() as directory:

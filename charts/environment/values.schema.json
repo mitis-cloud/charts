@@ -176,11 +176,16 @@
     },
     "databases": {
       "type": "object",
-      "description": "PostgreSQL databases named <namespace>-<key>.",
+      "description": "PostgreSQL databases named <namespace>-<key> unless name is set.",
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
           "extensions": {
             "type": "array",
             "uniqueItems": true,

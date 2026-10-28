@@ -94,10 +94,14 @@ spec:
                             type: string
                 databases:
                   type: object
-                  description: PostgreSQL databases on the platform's shared instance, named <namespace>-<key>. Account credentials are kept under <prefix>pgsql-<key>-<account>-password and -url.
+                  description: PostgreSQL databases on the platform's shared instance, named <namespace>-<key> unless name is set. Account credentials are kept under <prefix>pgsql-<key>-<account>-password and -url.
                   additionalProperties:
                     type: object
                     properties:
+                      name:
+                        type: string
+                        minLength: 1
+                        maxLength: 40
                       extensions:
                         type: array
                         items: {type: string}

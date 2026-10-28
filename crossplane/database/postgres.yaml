@@ -32,6 +32,7 @@ spec:
             {{- $ns := $xr.metadata.namespace }}
             {{- $spec := $xr.spec }}
             {{- $db := $spec.name }}
+            {{- $kubeDb := $db | lower | replace "_" "-" }}
             {{- $pg := (index .context "apiextensions.crossplane.io/environment").postgres }}
             {{- $groups := dict "admin" (printf "%s-group-admin" $db) "operator" (printf "%s-group-operator" $db) "reader" (printf "%s-group-reader" $db) }}
             {{- $schemas := merge (deepCopy ($spec.schemas | default dict)) (dict "public" (dict "operator" "full" "reader" "read-execute")) }}
@@ -96,7 +97,8 @@ spec:
 
             {{- range $account, $group := $spec.accounts }}
             {{- $role := printf "%s-%s" $db $account }}
-            {{- $forProvider := dict "privileges" (dict "login" true) "passwordSecretRef" (dict "name" $role "key" "password") }}
+            {{- $accountResource := printf "%s-%s" $kubeDb $account | lower | replace "_" "-" }}
+            {{- $forProvider := dict "privileges" (dict "login" true) "passwordSecretRef" (dict "name" $accountResource "key" "password") }}
             {{- /* Admin accounts act as the admin group, so the group owns what they create. */}}
             {{- if eq $group "admin" }}{{ $_ := set $forProvider "configurationParameters" (list (dict "name" "role" "value" $groups.admin)) }}{{ end }}
             {{- $mrs = append $mrs (dict "kind" "Role" "id" (printf "account-%s" $account) "external" $role "forProvider" $forProvider) }}
@@ -106,7 +108,7 @@ spec:
             apiVersion: generators.external-secrets.io/v1alpha1
             kind: Password
             metadata:
-              name: {{ $role }}
+              name: {{ $accountResource }}
               namespace: {{ $ns }}
               annotations:
                 gotemplating.fn.crossplane.io/composition-resource-name: account-{{ $account }}-generator
@@ -119,26 +121,26 @@ spec:
             apiVersion: external-secrets.io/v1
             kind: ExternalSecret
             metadata:
-              name: {{ $role }}-generated
+              name: {{ $accountResource }}-generated
               namespace: {{ $ns }}
               annotations:
                 gotemplating.fn.crossplane.io/composition-resource-name: account-{{ $account }}-generated
             spec:
               refreshPolicy: CreatedOnce
               target:
-                name: {{ $role }}-generated
+                name: {{ $accountResource }}-generated
               dataFrom:
                 - sourceRef:
                     generatorRef:
                       apiVersion: generators.external-secrets.io/v1alpha1
                       kind: Password
-                      name: {{ $role }}
+                      name: {{ $accountResource }}
             ---
             # Publishes a generated password only where none exists, so adopted accounts keep theirs.
             apiVersion: external-secrets.io/v1alpha1
             kind: PushSecret
             metadata:
-              name: {{ $role }}
+              name: {{ $accountResource }}
               namespace: {{ $ns }}
               annotations:
                 gotemplating.fn.crossplane.io/composition-resource-name: account-{{ $account }}-publish
@@ -149,7 +151,7 @@ spec:
                   name: {{ $spec.secrets.store }}
               selector:
                 secret:
-                  name: {{ $role }}-generated
+                  name: {{ $accountResource }}-generated
               template:
                 mergePolicy: Merge
                 data:
@@ -170,7 +172,7 @@ spec:
             apiVersion: external-secrets.io/v1
             kind: ExternalSecret
             metadata:
-              name: {{ $role }}
+              name: {{ $accountResource }}
               namespace: {{ $ns }}
               annotations:
                 gotemplating.fn.crossplane.io/composition-resource-name: account-{{ $account }}-credentials
@@ -180,7 +182,7 @@ spec:
                 kind: ClusterSecretStore
                 name: {{ $spec.secrets.store }}
               target:
-                name: {{ $role }}
+                name: {{ $accountResource }}
                 template:
                   mergePolicy: Merge
                   data:
@@ -199,7 +201,7 @@ spec:
             kind: {{ $mr.kind }}
             metadata:
               {{- $id := $mr.id | lower | replace "_" "-" }}
-              name: {{ $db }}-{{ $id }}
+              name: {{ $kubeDb }}-{{ $id }}
               namespace: {{ $ns }}
               annotations:
                 gotemplating.fn.crossplane.io/composition-resource-name: {{ $id }}
