@@ -6,6 +6,11 @@ environments:
     cluster: test
     namespace: example-test
     charts: {service: 0.1.0, environment: 0.1.0, proxy: 1.0.0, webapp: 0.1.0}
+    units:
+      backend: [api, migrations]
+      worker: [worker]
+      site: [portal, assets]
+      edge: [edge-proxy]
     promotion: automatic
     vars: {stage: test}
     layers: [stages/test.yaml]
@@ -17,6 +22,11 @@ environments:
     cluster: production
     namespace: example
     charts: {service: 0.1.0, proxy: 1.0.0, webapp: 0.1.0}
+    units:
+      backend: [api, migrations]
+      worker: [worker]
+      site: [portal, assets]
+      edge: [edge-proxy]
     upstream: [test]
     vars: {stage: production}
     promotion: manual

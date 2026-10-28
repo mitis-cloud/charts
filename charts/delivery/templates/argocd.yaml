@@ -1,6 +1,11 @@
 {{- include "mitis.delivery.validate" . -}}
 {{- $root := . -}}
 {{- range $unitName, $unit := .Values.releaseUnits }}
+{{- $environments := dict }}
+{{- range $envName, $env := $root.Values.environments }}
+{{- if hasKey $env.units $unitName }}{{ $_ := set $environments $envName $env }}{{ end }}
+{{- end }}
+{{- if $environments }}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
@@ -15,8 +20,7 @@ spec:
   generators:
     - list:
         elements:
-          {{- range $envName, $env := $root.Values.environments }}
-          {{- if has $unitName ($env.units | default (keys $root.Values.releaseUnits)) }}
+          {{- range $envName, $env := $environments }}
           - environment: {{ $envName }}
             cluster: {{ $env.cluster | quote }}
             namespace: {{ $env.namespace }}
@@ -24,7 +28,7 @@ spec:
             charts: {{ toJson $env.charts }}
             layers: {{ toJson ($env.layers | default list) }}
             externallyScaled: {{ $env.externallyScaled | default false }}
-          {{- end }}
+            services: {{ include "mitis.delivery.services" (dict "root" $root "env" $env "unit" $unitName) }}
           {{- end }}
   # Sources live in the patch: each environment inserts its own layers between the service and its overrides.
   templatePatch: |
@@ -32,6 +36,7 @@ spec:
       sources:
         {{- range $serviceName, $service := $unit.services }}
         {{- $chart := index $root.Values.charts $service.chart }}
+        {{ printf "{{- if index .services %q }}" $serviceName }}
         - repoURL: {{ $chart.repository | quote }}
           chart: {{ $chart.name }}
           targetRevision: '{{ printf "{{ index .charts %q }}" $service.chart }}'
@@ -66,6 +71,7 @@ spec:
               {{ "{{- end }}" }}
               {{- end }}
             {{- end }}
+        {{ "{{- end }}" }}
         {{- end }}
         - repoURL: {{ $root.Values.git.repository | quote }}
           targetRevision: {{ $root.Values.git.revision | quote }}
@@ -85,7 +91,9 @@ spec:
           kind: HTTPRoute
           jsonPointers: [/metadata/labels/rollouts.argoproj.io~1gatewayapi-canary]
           jqPathExpressions: ['.spec.rules[].backendRefs[].weight']
-        {{- range $service := $unit.services }}
+        {{- range $serviceName, $service := $unit.services }}
+        {{- if $service.capacityTargets }}
+        {{ printf "{{- if index .services %q }}" $serviceName }}
         {{- range $target := $service.capacityTargets }}
         - group: {{ ternary "apps" "argoproj.io" (eq $target.kind "Deployment") }}
           kind: {{ $target.kind }}
@@ -95,6 +103,8 @@ spec:
             - /spec/replicas
             - /metadata/annotations/understudy.sh~1base-replicas
             - /metadata/annotations/understudy.sh~1target-revision
+        {{- end }}
+        {{ "{{- end }}" }}
         {{- end }}
         {{- end }}
         {{ "{{- if .externallyScaled }}" }}
@@ -128,6 +138,7 @@ spec:
         retry:
           limit: 3
           backoff: {duration: 5s, factor: 2, maxDuration: 1m}
+{{- end }}
 {{- end }}
 {{- range $envName, $env := .Values.environments }}
 ---
