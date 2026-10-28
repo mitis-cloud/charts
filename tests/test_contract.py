@@ -676,7 +676,9 @@ class DeliveryContract(unittest.TestCase):
         slots = stages["production"]["spec"]["requestedFreight"]
         self.assertEqual([r["origin"]["name"] for r in slots], ["backend", "site", "worker"])
         self.assertTrue(all(r["sources"] == {"stages": ["test"]} for r in slots))
-        only_backend = render(self.chart, self.example, {"environments": {"production": {"units": ["backend"]}}})
+        values = yaml.safe_load(self.example.read_text())
+        values["environments"]["production"]["units"] = {"backend": ["api", "migrations"]}
+        only_backend = render(self.chart, values)
         self.assertEqual([r["origin"]["name"] for r in resource(only_backend, "Stage", "production")["spec"]["requestedFreight"]], ["backend"])
         # A promotion touches only the unit whose Freight it moves.
         steps = stages["production"]["spec"]["promotionTemplate"]["spec"]["steps"]
@@ -773,16 +775,77 @@ class DeliveryContract(unittest.TestCase):
         ]:
             with self.subTest(invalid=invalid):
                 render(self.chart, self.example, invalid, success=False)
-        docs = render(
-            self.chart,
-            self.example,
-            {"environments": {"production": {"units": ["backend"]}}},
-        )
+        values = yaml.safe_load(self.example.read_text())
+        values["environments"]["production"]["units"] = {"backend": ["api", "migrations"]}
+        docs = render(self.chart, values)
         production = resource(docs, "Stage", "production")["spec"]["promotionTemplate"]["spec"]["steps"]
         self.assertEqual(
             [a["name"] for a in next(s for s in production if s["uses"] == "argocd-update")["config"]["apps"]],
             ["example-backend-production"],
         )
+
+    def test_service_membership_filters_sources_settings_and_promotion(self):
+        values = yaml.safe_load(self.example.read_text())
+        values["environments"]["production"]["units"] = {
+            "backend": ["migrations"], "site": ["assets"],
+        }
+        values["releaseUnits"]["site"]["services"]["portal"]["gitValues"]["config"]["repository"] = "https://github.com/example/portal.git"
+        docs = render(self.chart, values)
+        sources = self.expanded_sources(docs, "backend", "production")
+        self.assertEqual([s["helm"]["releaseName"] for s in sources if "helm" in s], ["migrations"])
+        self.assertFalse(any(r.get("name") == "api" for r in self.expanded_spec(docs, "backend", "production")["ignoreDifferences"]))
+        sources = self.expanded_sources(docs, "site", "production")
+        self.assertEqual([s["helm"]["releaseName"] for s in sources if "helm" in s], ["assets"])
+        stage = resource(docs, "Stage", "production")["spec"]
+        self.assertEqual([r["origin"]["name"] for r in stage["requestedFreight"]], ["backend", "site"])
+        steps = stage["promotionTemplate"]["spec"]["steps"]
+        writes = [s["config"]["path"] for s in steps if s["uses"] in ("yaml-update", "file-write")]
+        self.assertEqual(writes, ["./repo/environments/production/migrations.yaml", "./repo/environments/production/assets.yaml"])
+        clones = [s["config"]["repoURL"] for s in steps if s["uses"] == "git-clone"]
+        self.assertEqual(clones, ["https://github.com/example/platform.git", "https://github.com/example/web.git"])
+        self.assertFalse(any(s.get("as") == "read-portal-config" for s in steps))
+        self.assertEqual(len([s for s in steps if s["uses"] == "git-commit"]), 1)
+        self.assertEqual(len([s for s in steps if s["uses"] == "argocd-update"]), 2)
+        test_sources = self.expanded_sources(docs, "site", "test")
+        self.assertEqual([s["helm"]["releaseName"] for s in test_sources if "helm" in s], ["assets", "portal"])
+        warehouse = resource(docs, "Warehouse", "site")["spec"]["subscriptions"]
+        self.assertEqual(len([s for s in warehouse if "image" in s]), 2)
+        self.assertIn("https://github.com/example/portal.git", [s["git"]["repoURL"] for s in warehouse if "git" in s])
+
+    def test_membership_is_explicit_and_validated(self):
+        for units in [None, [], ["backend"], {}, {"missing": ["api"]},
+                      {"backend": []}, {"backend": ["api", "api"]},
+                      {"backend": ["missing"]}, {"backend": ["portal"]}]:
+            with self.subTest(units=units):
+                values = yaml.safe_load(self.example.read_text())
+                values["environments"]["production"]["units"] = units
+                render(self.chart, values, success=False)
+        values = yaml.safe_load(self.example.read_text())
+        del values["environments"]["production"]["units"]
+        render(self.chart, values, success=False)
+        values = yaml.safe_load(self.example.read_text())
+        del values["environments"]["test"]["units"]["worker"]
+        error = render(self.chart, values, success=False)
+        self.assertIn("upstream test does not deploy unit worker", error)
+
+    def test_unselected_catalog_entries_do_not_change_installations(self):
+        values = yaml.safe_load(self.example.read_text())
+        before = render(self.chart, values)
+        values["releaseUnits"]["backend"]["services"]["optional"] = {
+            "chart": "proxy", "images": {"image.digest": "ghcr.io/example/backend"},
+            "capacityTargets": [{"name": "optional", "kind": "Deployment"}],
+        }
+        after = render(self.chart, values)
+        for env in values["environments"]:
+            self.assertEqual(self.expanded_spec(before, "backend", env), self.expanded_spec(after, "backend", env))
+            self.assertEqual(resource(before, "Stage", env), resource(after, "Stage", env))
+        for env in values["environments"].values():
+            env["units"] = {"backend": ["api", "migrations"]}
+            del env["charts"]["proxy"]
+            del env["charts"]["webapp"]
+        docs = render(self.chart, values)
+        self.assertEqual([d["metadata"]["name"] for d in docs if d["kind"] == "ApplicationSet"], ["example-backend"])
+        self.assertEqual([s["helm"]["releaseName"] for s in self.expanded_sources(docs, "backend", "test") if "helm" in s], ["api", "migrations"])
 
     def expanded_spec(self, docs, unit, environment):
         appset = resource(docs, "ApplicationSet", f"example-{unit}")

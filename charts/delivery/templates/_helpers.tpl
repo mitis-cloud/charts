@@ -19,17 +19,20 @@
 {{- range $envName, $env := .Values.environments -}}
 {{- if and (hasKey $env "environment") (not (hasKey $env.charts "environment")) -}}{{ fail (printf "environment %s is missing chart pin environment" $envName) }}{{- end -}}
 {{- if and (hasKey $env "environment") (not (hasKey $root.Values.charts "environment")) -}}{{ fail "environments with environment values need the environment chart" }}{{- end -}}
-{{- range $unitName := $env.units | default (keys $root.Values.releaseUnits) -}}
+{{- range $unitName, $services := $env.units -}}
 {{- if not (hasKey $root.Values.releaseUnits $unitName) -}}{{ fail (printf "%s references unknown release unit %s" $envName $unitName) }}{{- end -}}
 {{- if gt (len (printf "%s-%s-%s" $root.Values.project $unitName $envName)) 63 -}}{{ fail "project-unit-environment names must fit in 63 characters" }}{{- end -}}
-{{- range $name, $service := (index $root.Values.releaseUnits $unitName).services -}}
+{{- $unit := index $root.Values.releaseUnits $unitName -}}
+{{- range $name := $services -}}
+{{- if not (hasKey $unit.services $name) -}}{{ fail (printf "environment %s selects unknown service %s in unit %s" $envName $name $unitName) }}{{- end -}}
+{{- $service := index $unit.services $name -}}
 {{- if not (hasKey $env.charts $service.chart) -}}{{ fail (printf "environment %s is missing chart pin %s" $envName $service.chart) }}{{- end -}}
 {{- end -}}
 {{- range $upstream := $env.upstream -}}
 {{- if not (hasKey $root.Values.environments $upstream) -}}{{ fail (printf "unknown upstream environment %s" $upstream) }}{{- end -}}
 {{- if eq $upstream $envName -}}{{ fail "an environment cannot promote from itself" }}{{- end -}}
 {{- $source := index $root.Values.environments $upstream -}}
-{{- if not (has $unitName ($source.units | default (keys $root.Values.releaseUnits))) -}}{{ fail (printf "%s's upstream %s does not deploy unit %s" $envName $upstream $unitName) }}{{- end -}}
+{{- if not (hasKey $source.units $unitName) -}}{{ fail (printf "%s's upstream %s does not deploy unit %s" $envName $upstream $unitName) }}{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- $seen := dict $envName true -}}
@@ -55,10 +58,20 @@
 
 {{- /* Release units an environment deploys, in name order. */}}
 {{- define "mitis.delivery.units" -}}
-{{- toJson (.env.units | default (keys .root.Values.releaseUnits) | sortAlpha) -}}
+{{- toJson (keys .env.units | sortAlpha) -}}
 {{- end -}}
 
-{{- /* The promoted units an environment deploys: its Stage moves them together. */}}
+{{- /* Resolve membership once for Argo sources and Kargo promotion steps. */}}
+{{- define "mitis.delivery.services" -}}
+{{- $services := dict -}}
+{{- $unit := index .root.Values.releaseUnits .unit -}}
+{{- range $name := index .env.units .unit -}}
+{{- $_ := set $services $name (index $unit.services $name) -}}
+{{- end -}}
+{{- toJson $services -}}
+{{- end -}}
+
+{{- /* Each promoted unit gets its own Freight slot in the environment's Stage. */}}
 {{- define "mitis.delivery.promotedUnits" -}}
 {{- $root := .root -}}
 {{- $out := list -}}

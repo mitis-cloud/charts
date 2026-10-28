@@ -1,3 +1,4 @@
+{{- include "mitis.delivery.validate" . -}}
 {{- $root := . -}}
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Project
@@ -103,11 +104,11 @@ spec:
               - branch: {{ $root.Values.git.revision | quote }}
                 path: ./repo
         {{- range $unitName := $promoted }}
-        {{- $unit := index $root.Values.releaseUnits $unitName }}
+        {{- $services := include "mitis.delivery.services" (dict "root" $root "env" $env "unit" $unitName) | fromJson }}
         {{- $when := printf "${{ ctx.targetFreight.origin.name == %q }}" $unitName }}
         {{- /* Repositories the unit reads values from, checked out at its Freight's commit. */}}
         {{- $checkouts := dict }}
-        {{- range $service := $unit.services }}{{ range $value := $service.gitValues }}{{ $_ := set $checkouts $value.repository true }}{{ end }}{{ end }}
+        {{- range $service := $services }}{{ range $value := $service.gitValues }}{{ $_ := set $checkouts $value.repository true }}{{ end }}{{ end }}
         {{- $checkoutPaths := dict }}
         {{- range $i, $repository := keys $checkouts | sortAlpha }}{{ $_ := set $checkoutPaths $repository (printf "./sources/%s-%d" $unitName $i) }}{{ end }}
         {{- range $repository := keys $checkoutPaths | sortAlpha }}
@@ -119,7 +120,7 @@ spec:
               - commit: {{ printf "${{ commitFrom(%q, warehouse(%q)).ID }}" $repository $unitName | quote }}
                 path: {{ index $checkoutPaths $repository }}
         {{- end }}
-        {{- range $serviceName, $service := $unit.services }}
+        {{- range $serviceName, $service := $services }}
         {{- if $service.gitValues }}
         {{- $written := dict }}
         {{- range $key := keys $service.gitValues | sortAlpha }}
