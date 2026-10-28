@@ -157,6 +157,7 @@ spec:
 
                 objectStorage:
                   type: object
+                  maxProperties: 64
                   additionalProperties:
                     type: object
                     required:
