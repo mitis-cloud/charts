@@ -163,12 +163,11 @@ spec:
       namespace: {{ $env.namespace }}
   namespaceResourceWhitelist:
     - {group: '*', kind: '*'}
+  {{- $clusterResources := $env.clusterResources | default list }}
   {{- if hasKey $env "environment" }}
-  clusterResourceWhitelist:
-    - {group: mitis.cloud, kind: Environment}
-  {{- else }}
-  clusterResourceWhitelist: []
+  {{- $clusterResources = prepend $clusterResources (dict "group" "mitis.cloud" "kind" "Environment") }}
   {{- end }}
+  clusterResourceWhitelist: {{ toJson ($clusterResources | uniq) }}
 {{- with $env.environment }}
 {{- $chart := index $root.Values.charts "environment" }}
 ---

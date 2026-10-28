@@ -151,6 +151,13 @@ class AwsEnvironmentComposition(unittest.TestCase):
         self.assertEqual(webapp["spec"]["maintenance"]["body"], "<p>Back soon.</p>")
         self.assertEqual(webapp["spec"]["outputs"], {"store": "aws-ssm", "key": "example-portal"})
 
+    def test_database_physical_name_is_independent_of_its_environment_key(self):
+        docs = self.composed({"databases": {"backend": {"name": "legacy_analytics"}}})
+        database = resource(docs, "Database", "backend")
+        self.assertEqual(database["spec"]["name"], "legacy_analytics")
+        self.assertEqual(database["metadata"]["namespace"], "example")
+        self.assertEqual(database["spec"]["secrets"]["key"], "example-pgsql-backend")
+
     def test_package_builds(self):
         with tempfile.TemporaryDirectory() as directory:
             subprocess.run(
@@ -169,8 +176,9 @@ class AwsEnvironmentComposition(unittest.TestCase):
 class PostgresDatabaseComposition(unittest.TestCase):
     composition = CROSSPLANE / "database/postgres.yaml"
 
-    def composed(self):
+    def composed(self, **spec):
         xr = yaml.safe_load((ROOT / "examples/crossplane/database.yaml").read_text())
+        xr["spec"].update(spec)
         return compose(xr, self.composition)
 
     def by_name(self, docs):
@@ -228,6 +236,21 @@ class PostgresDatabaseComposition(unittest.TestCase):
             self.assertEqual(keys, [f"example-pgsql-backend-{account}-password", f"example-pgsql-backend-{account}-url"])
         generated = [d for d in docs.values() if d["kind"] == "ExternalSecret" and d["metadata"]["name"].endswith("-generated")]
         self.assertTrue(all(d["spec"]["refreshPolicy"] == "CreatedOnce" for d in generated))
+
+    def test_sql_identifiers_are_preserved_with_valid_kubernetes_names(self):
+        resources = self.composed(name="legacy_analytics")
+        docs = self.by_name(resources)
+        for doc in resources:
+            self.assertRegex(doc["metadata"]["name"], r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
+        database = docs["legacy-analytics-database"]
+        self.assertEqual(database["metadata"]["annotations"]["crossplane.io/external-name"], "legacy_analytics")
+        self.assertEqual(database["spec"]["forProvider"]["owner"], "legacy_analytics-group-admin")
+        account = docs["legacy-analytics-account-api"]
+        self.assertEqual(account["metadata"]["annotations"]["crossplane.io/external-name"], "legacy_analytics-api")
+        self.assertEqual(account["spec"]["forProvider"]["passwordSecretRef"], {"name": "legacy-analytics-api", "key": "password"})
+        credentials = resource(resources, "ExternalSecret", "legacy-analytics-api")
+        self.assertEqual(credentials["spec"]["target"]["template"]["data"]["username"], "legacy_analytics-api")
+        self.assertEqual(credentials["spec"]["data"][0]["remoteRef"]["key"], "example-pgsql-backend-api-password")
 
 
 

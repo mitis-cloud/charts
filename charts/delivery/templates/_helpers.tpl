@@ -94,3 +94,11 @@
 {{- end -}}
 {{- printf "{%s}" (join ", " $parts) -}}
 {{- end -}}
+{{- define "mitis.delivery.imageExpression" -}}
+{{- $image := printf "imageFrom(%q, warehouse(%q))" .repository .unit -}}
+{{- if hasSuffix "tag" .path -}}
+{{- printf "%s.Tag + \"@\" + %s.Digest" $image $image -}}
+{{- else -}}
+{{- printf "%s.Digest" $image -}}
+{{- end -}}
+{{- end -}}

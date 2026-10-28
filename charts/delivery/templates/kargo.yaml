@@ -144,7 +144,7 @@ spec:
         {{- if not (hasKey $node $part) }}{{ $_ := set $node $part (dict) }}{{ end }}
         {{- $node = index $node $part }}
         {{- end }}
-        {{- $_ := set $node (last $keys) (printf "imageFrom(%q, warehouse(%q)).Digest" $image $unitName) }}
+        {{- $_ := set $node (last $keys) (include "mitis.delivery.imageExpression" (dict "path" $path "repository" $image "unit" $unitName)) }}
         {{- end }}
         {{- /* The service owns its environment file: rewritten whole, so keys removed at the source disappear. */}}
         - uses: file-write
@@ -163,7 +163,7 @@ spec:
             updates:
               {{- range $key, $image := . }}
               - key: {{ $key | quote }}
-                value: {{ printf "${{ imageFrom(%q, warehouse(%q)).Digest }}" $image $unitName | quote }}
+                value: {{ printf "${{ %s }}" (include "mitis.delivery.imageExpression" (dict "path" $key "repository" $image "unit" $unitName)) | quote }}
               {{- end }}
         {{- end }}
         {{- end }}

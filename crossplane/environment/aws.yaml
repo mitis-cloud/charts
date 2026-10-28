@@ -145,7 +145,7 @@ spec:
               annotations:
                 gotemplating.fn.crossplane.io/composition-resource-name: database-{{ $name }}
             spec:
-              name: {{ $namespace }}-{{ $name }}
+              name: {{ $database.name | default (printf "%s-%s" $namespace $name) }}
               {{- with $database.extensions }}
               extensions: {{ toJson . }}
               {{- end }}

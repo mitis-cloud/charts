@@ -24,6 +24,10 @@
         "promotion": {"enum": ["manual", "automatic"]},
         "units": {"type": "object", "minProperties": 1, "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/definitions/name"}}, "description": "Explicit service membership for each deployed release unit; omitted units and services are not deployed."},
         "routing": {"enum": ["ingress", "gateway"]},
+        "clusterResources": {"type": "array", "uniqueItems": true, "items": {"type": "object", "additionalProperties": false, "required": ["group", "kind"], "properties": {
+          "group": {"type": "string", "pattern": "^([a-z0-9]([a-z0-9.-]*[a-z0-9])?)?$"},
+          "kind": {"type": "string", "pattern": "^[A-Z][a-zA-Z0-9]*$"}
+        }}, "description": "Explicit cluster-scoped resource kinds allowed in this environment's AppProject, in addition to its Environment composite."},
         "externallyScaled": {"type": "boolean", "description": "Replica counts are changed outside Git, for example by scheduled downscaling; Argo ignores them."},
         "layers": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-zA-Z0-9_-][a-zA-Z0-9_/-]*\\.yaml$"}, "description": "Repository-relative values files applied to every service between its definition and the environment's own files, in order."},
         "environment": {"type": "object", "description": "Values for the environment chart, deployed and synchronized automatically. Requires the environment chart pin; the namespace comes from the environment."},
@@ -45,7 +49,7 @@
                 "expression": {"type": "string", "minLength": 1, "description": "expr-lang expression selecting part of the parsed file; the whole file by default."}
               }
             }, "description": "Top-level values promoted from files in Git repositories at the Freight's commit; the Warehouse follows those repositories. The service's environment file becomes promotion-owned and is rewritten whole."},
-            "images": {"type": "object", "minProperties": 1, "propertyNames": {"pattern": "^([a-zA-Z][a-zA-Z0-9_-]*\\.)*digest$"}, "additionalProperties": {"type": "string", "minLength": 1}, "description": "Values paths to immutable image digests and the image repositories they promote. Keys must already exist in environment overrides. A unit without any is configuration: it syncs automatically and has no Kargo Freight slot."},
+            "images": {"type": "object", "minProperties": 1, "propertyNames": {"pattern": "^([a-zA-Z][a-zA-Z0-9_-]*\\.)*(digest|tag)$"}, "additionalProperties": {"type": "string", "minLength": 1}, "description": "Values paths and the image repositories they promote. A digest field receives the digest; a tag field receives tag@digest for charts that render repository:tag. Keys must already exist in environment overrides. A unit without any is configuration: it syncs automatically and has no Kargo Freight slot."},
             "capacityTargets": {"type": "array", "items": {
               "type": "object", "additionalProperties": false, "required": ["name", "kind"], "properties": {
                 "name": {"$ref": "#/definitions/name"}, "kind": {"enum": ["Deployment", "Rollout"]}
