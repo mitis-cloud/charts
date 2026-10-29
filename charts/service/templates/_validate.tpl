@@ -24,7 +24,7 @@
 {{- end -}}
 {{- $name := include "mitis.service.name" . -}}
 {{- $identities := dict -}}
-{{- if and (eq $v.workload "resources") (or $v.init $v.sidecars $v.ports $v.health $v.environment $v.tokens $v.mounts (and $v.http (not $v.response)) $v.availability $v.command $v.args $v.identity $v.fileGroup $v.shutdown $v.workingDirectory $v.account $v.security $v.discovery) -}}
+{{- if and (eq $v.workload "resources") (or $v.init $v.sidecars $v.ports $v.health $v.environment $v.tokens $v.mounts (and $v.http (not $v.response)) $v.availability $v.command $v.args $v.identity $v.fileGroup $v.shutdown $v.workingDirectory $v.account $v.security) -}}
 {{- fail "resource-only services declare container inputs on their jobs, not at the root" -}}{{- end -}}
 {{- if or (gt (len $name) 40) (not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $name)) -}}
 {{- fail "service name/release name must be a DNS label of at most 40 characters" -}}{{- end -}}

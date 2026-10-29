@@ -29,7 +29,6 @@ The service definition is a closed interface. [values.schema.json](values.schema
 | `architecture` | omitted | Require `amd64` or `arm64` nodes when the image is single-platform; applies to service jobs too. |
 | `security` | `image-defaults` | `restricted` requires non-root, a read-only root filesystem, no privilege escalation, dropped capabilities, and runtime-default seccomp. Declare a nonzero `identity.user` or use an image with a non-root user. |
 | `account` | Kubernetes default | Consume an existing infrastructure-owned service account, including its cloud identity. Incompatible with chart-owned `permissions`. |
-| `discovery` | `dns` | `environment` additionally injects Kubernetes service-link environment variables for applications requiring them. |
 
 New services roll with one surge instance and no planned unavailability. Adoption of existing services must record their actual settings instead of assuming these defaults are equivalent.
 
@@ -88,7 +87,7 @@ environment:
 ```
 
 - `url` uses `hostname` or `subdomain`/`domain`, optional `path`, and `scheme` (`https` by default).
-- `endpoint` uses an internal `service`, optional numeric `port`, `path`, and `scheme` (`http` by default).
+- `endpoint` uses an internal `service`, optional numeric `port`, `path`, and `scheme` (`http` by default). Kubernetes service-link variables (`<SERVICE>_SERVICE_HOST`) are always disabled; reach other services by DNS name.
 - `fact` reads a literal value from the environment's `facts` map; missing facts fail rendering.
 - `ssm` generates an ExternalSecret and an explicit Secret-key reference. `secretPrefix` is prepended; an object `{key: /actual/key, property: field, absolute: true}` bypasses it and optionally selects a property.
 - `format` substitutes only `{ssm:key}` and `{fact:name}`. Append `|urlquery` to URL-encode a substitution. Unknown references, operations and unmatched braces fail rendering. Other strings remain literal, including Go-template syntax.
@@ -179,7 +178,7 @@ See the [complete file example](../../examples/service/input-files.yaml). Docume
 | `cleanup` | Release result retention: `on-success` (default), `on-completion`, `next-run`, or a duration such as `5m` after completion. Durations use the native Job TTL controller. |
 | `resultLifetime` | Optional native TTL for results retained by `on-success`, `on-completion`, or `next-run`. For example, `cleanup: on-success` plus `resultLifetime: 5m` removes successful hooks immediately and retains failed results for up to five minutes after completion. Cannot combine with duration-valued cleanup or scheduled jobs. |
 
-Jobs also accept `account`, `discovery`, and `security` with the process semantics above; declare them on each job. They do not inherit the main process's identity or token settings.
+Jobs also accept `account` and `security` with the process semantics above; declare them on each job. They do not inherit the main process's identity or token settings.
 
 Release jobs are repeatable and failure-gating on full release operations, not exactly-once tasks. Rendering/refreshing does not execute them. Manual tasks are excluded until explicitly selected; see [engine sequencing](../../docs/deployment.md).
 

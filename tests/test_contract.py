@@ -407,7 +407,6 @@ class ServiceContract(unittest.TestCase):
                     "run": "after-ready",
                     "timeout": "none",
                     "cleanup": "5m",
-                    "discovery": "environment",
                     "account": "cloud-worker",
                 }
             },
@@ -419,7 +418,7 @@ class ServiceContract(unittest.TestCase):
             job["metadata"]["annotations"]["helm.sh/hook-delete-policy"],
             "before-hook-creation",
         )
-        self.assertTrue(job["spec"]["template"]["spec"]["enableServiceLinks"])
+        self.assertFalse(job["spec"]["template"]["spec"]["enableServiceLinks"])
         self.assertEqual(
             job["spec"]["template"]["spec"]["serviceAccountName"], "cloud-worker"
         )
