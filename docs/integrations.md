@@ -36,7 +36,7 @@ The application supplies a smoke command against the candidate endpoint. Success
 
 Understudy 0.4.4 supports Deployments and Rollouts. It requires overlap-safe processes and exactly one effective-capacity writer. HPA/KEDA or another Understudy resource must not manage the same replicas. Protection applies to bounded planned eviction; it does not guarantee abrupt-failure, network-draining, or application-level availability.
 
-For Argo, service capacity renders both initial replicas and `Understudy.spec.baselineReplicas`, unless `render.capacity: external` (set by delivery for `externallyScaled` environments): then the baseline follows the live replicas, and the external scaler stays the only capacity writer. The delivery unit's `capacityTargets` scopes delegation to the exact workload kind/name/namespace:
+For Argo, service capacity renders both initial replicas and `Understudy.spec.baselineReplicas`, unless `render.capacity: external` (set by delivery for `scaledBy: external` environments): then the baseline follows the live replicas, and the external scaler stays the only capacity writer. The delivery unit's `capacityTargets` scopes delegation to the exact workload kind/name/namespace:
 
 - `/spec/replicas`
 - `/metadata/annotations/understudy.sh~1base-replicas`

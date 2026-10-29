@@ -29,7 +29,6 @@
     "architecture": {"enum": ["amd64", "arm64"], "description": "Required node architecture when an image supports only one platform."},
     "discovery": {"enum": ["dns", "environment"], "description": "DNS discovery by default; environment also injects Kubernetes service-link variables."},
     "account": {"$ref": "#/definitions/name", "description": "Existing infrastructure-owned service account, including any cloud identity binding. Mutually exclusive with chart-owned permissions."},
-    "apiToken": {"type": "boolean", "description": "Mount the service account API token; defaults to true to preserve Kubernetes defaults."},
     "shutdown": {"type": "integer", "minimum": 1, "description": "Graceful shutdown budget in seconds."},
     "fileGroup": {"type": "integer", "minimum": 0, "description": "Group ID used for writable pod volumes."},
     "domain": {"type": "string"},
@@ -53,7 +52,7 @@
     "disruption": {
       "type": "object", "additionalProperties": false,
       "properties": {
-        "handover": {"type": "boolean"},
+        "surgeBeforeEviction": {"type": "boolean", "description": "Start a replacement pod and wait for it to be ready before a planned eviction removes the current one."},
         "maxWait": {"$ref": "#/definitions/duration"},
         "name": {"$ref": "#/definitions/name"}
       }
@@ -270,7 +269,6 @@
         "timeZone": {"type": "string", "minLength": 1, "description": "IANA time zone for a scheduled job."},
         "discovery": {"enum": ["dns", "environment"]},
         "security": {"enum": ["image-defaults", "restricted"]},
-        "apiToken": {"type": "boolean"},
         "account": {"$ref": "#/definitions/name"},
         "fileGroup": {"type": "integer", "minimum": 0},
          "cleanup": {"oneOf": [{"enum": ["on-success", "on-completion", "next-run"]}, {"$ref": "#/definitions/duration"}], "description": "Release-job result retention or elapsed retention after completion; defaults to on-success."},

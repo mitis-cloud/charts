@@ -20,7 +20,7 @@ The build is a zip pushed to ECR as an OCI artifact, for example with `oras push
 | `prefix` | Key prefix inside the bucket; empty publishes at the root. |
 | `replace` | Delete objects under `prefix` that the build no longer contains. Default `false`: application buckets keep older chunks for sessions still running the previous build. |
 | `config` | An object published as `config.json` next to the build, or `null` for none. |
-| `placement` | Workload pool using the `env` node label and taint, as in the service chart; `any` (default) adds no constraint. |
+| `publishJob.placement` | Workload pool for the publish Job, using the `env` node label and taint as in the service chart. Default `spot`; `any` adds no constraint. The site itself is served from the bucket, not the cluster. |
 | `timeout` | Job deadline, default `10m`. |
 | `tools.aws`, `tools.unpack` | Pinned AWS CLI and BusyBox images. |
 | `resources` | Container resources for each step. |

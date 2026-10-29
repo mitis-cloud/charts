@@ -28,7 +28,7 @@
           "group": {"type": "string", "pattern": "^([a-z0-9]([a-z0-9.-]*[a-z0-9])?)?$"},
           "kind": {"type": "string", "pattern": "^[A-Z][a-zA-Z0-9]*$"}
         }}, "description": "Explicit cluster-scoped resource kinds allowed in this environment's AppProject, in addition to its Environment composite."},
-        "externallyScaled": {"type": "boolean", "description": "Replica counts are changed outside Git, for example by scheduled downscaling; Argo ignores them."},
+        "scaledBy": {"enum": ["git", "external"], "description": "Who owns replica counts. external: something outside Git (for example scheduled downscaling) changes them; Argo ignores them and Understudy baselines follow the live count. Defaults to git."},
         "layers": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-zA-Z0-9_-][a-zA-Z0-9_/-]*\\.yaml$"}, "description": "Repository-relative values files applied to every service between its definition and the environment's own files, in order."},
         "environment": {"type": "object", "description": "Values for the environment chart, deployed and synchronized automatically. Requires the environment chart pin; the namespace comes from the environment."},
         "vars": {"type": "object", "propertyNames": {"pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"}, "additionalProperties": {"type": "string"}, "description": "Promotion variables, available to gitValues paths and expressions as ${{ vars.<name> }}."}

@@ -16,7 +16,7 @@ The service definition is a closed interface. [values.schema.json](values.schema
 | `image.pullPolicy` | `IfNotPresent` | Also accepts `Always` and `Never`. |
 | `command`, `args` | image defaults | Arrays passed directly to the container; shell interpretation requires an explicit shell command. |
 | `workingDirectory` | image default | Absolute working directory. |
-| `capacity.instances` | `1` | Baseline replicas; explicit `0` is preserved. Rollouts/handover may temporarily exceed it. |
+| `capacity.instances` | `1` | Baseline replicas; explicit `0` is preserved. Rollouts and `surgeBeforeEviction` may temporarily exceed it. |
 | `capacity.cpu` | `100m` for main | Scheduling reservation, expressed in cores or millicores. Helpers do not inherit main reservations. |
 | `capacity.memory` | `128Mi` | Memory reservation. |
 | `capacity.memoryLimit` | `256Mi` | Memory ceiling. |
@@ -29,7 +29,6 @@ The service definition is a closed interface. [values.schema.json](values.schema
 | `architecture` | omitted | Require `amd64` or `arm64` nodes when the image is single-platform; applies to service jobs too. |
 | `security` | `image-defaults` | `restricted` requires non-root, a read-only root filesystem, no privilege escalation, dropped capabilities, and runtime-default seccomp. Declare a nonzero `identity.user` or use an image with a non-root user. |
 | `account` | Kubernetes default | Consume an existing infrastructure-owned service account, including its cloud identity. Incompatible with chart-owned `permissions`. |
-| `apiToken` | Kubernetes default (`true`) | Whether to mount the service account's API token. |
 | `discovery` | `dns` | `environment` additionally injects Kubernetes service-link environment variables for applications requiring them. |
 
 New services roll with one surge instance and no planned unavailability. Adoption of existing services must record their actual settings instead of assuming these defaults are equivalent.
@@ -157,9 +156,9 @@ See the [complete file example](../../examples/service/input-files.yaml). Docume
 
 `init` and `sidecars` map helper names to the same `image`, `command`, `args`, `workingDirectory`, `capacity`, `ports`, `health`, `environment`, `files`, `tokens`, `mounts`, `identity`, and `security` vocabulary. A helper inherits the **whole main image** only when its image object is absent. It does not inherit environment, files, tokens, mounts, or resources; helper resource reservations/ceilings are explicit and omitted when undeclared. Helper capacity has no instance count. Init helpers run in name order; use names expressing the required order when there are several. Sidecars are ordinary colocated containers.
 
-`permissions` provides namespace-scoped API access for a controller/helper: each entry has `group`, `resources`, `actions`, and optional resource `names`. It creates one service account, Role, and RoleBinding. Allowed actions are get/list/watch/create/update/patch/delete. It does not grant cluster permissions.
+`permissions` provides namespace-scoped API access for a controller/helper: each entry has `group`, `resources`, `actions`, and optional resource `names`. It creates one service account, Role, and RoleBinding. Pods mount the Kubernetes API token only when the chart owns their service account (`permissions` or `outputs`). Allowed actions are get/list/watch/create/update/patch/delete. It does not grant cluster permissions.
 
-`tokens` (since 0.1.1) maps a logical name to `{audience, path, lifetime}` on any process, helper, or job. It projects a native service-account token into a dedicated read-only directory at `path`, with filename `token`. The optional `lifetime` requests 600–86400 seconds (default 3600); the API server can adjust it. Each process explicitly opts in. These tokens use the pod's service account, independently of the default Kubernetes API token controlled by `apiToken`. They grant no permissions by themselves: the recipient's trust policy and the existing `account` remain infrastructure-owned. Direct directory mounts preserve kubelet token rotation; no subpath is used. Token directories must not overlap other mounts/files. See the [identity example](../../examples/service/identity.yaml).
+`tokens` (since 0.1.1) maps a logical name to `{audience, path, lifetime}` on any process, helper, or job. It projects a native service-account token into a dedicated read-only directory at `path`, with filename `token`. The optional `lifetime` requests 600–86400 seconds (default 3600); the API server can adjust it. Each process explicitly opts in. These tokens use the pod's service account, independently of the Kubernetes API token. They grant no permissions by themselves: the recipient's trust policy and the existing `account` remain infrastructure-owned. Direct directory mounts preserve kubelet token rotation; no subpath is used. Token directories must not overlap other mounts/files. See the [identity example](../../examples/service/identity.yaml).
 
 ## Jobs and updates
 
@@ -180,7 +179,7 @@ See the [complete file example](../../examples/service/input-files.yaml). Docume
 | `cleanup` | Release result retention: `on-success` (default), `on-completion`, `next-run`, or a duration such as `5m` after completion. Durations use the native Job TTL controller. |
 | `resultLifetime` | Optional native TTL for results retained by `on-success`, `on-completion`, or `next-run`. For example, `cleanup: on-success` plus `resultLifetime: 5m` removes successful hooks immediately and retains failed results for up to five minutes after completion. Cannot combine with duration-valued cleanup or scheduled jobs. |
 
-Jobs also accept `account`, `apiToken`, `discovery`, and `security` with the process semantics above; declare them on each job. They do not inherit the main process's identity or token settings.
+Jobs also accept `account`, `discovery`, and `security` with the process semantics above; declare them on each job. They do not inherit the main process's identity or token settings.
 
 Release jobs are repeatable and failure-gating on full release operations, not exactly-once tasks. Rendering/refreshing does not execute them. Manual tasks are excluded until explicitly selected; see [engine sequencing](../../docs/deployment.md).
 
@@ -188,7 +187,7 @@ Release jobs are repeatable and failure-gating on full release operations, not e
 
 Canary requires Gateway routing, HTTP exposure, and an explicit `updates.smoke` job with application-owned command, timeout, inputs, and resources. It keeps a baseline-sized candidate pool, tests at zero traffic, then tests at 10% and 50% before full promotion. Failed application jobs fail analysis (`failureLimit: 0`); native inconclusive analysis pauses progression. A repeatable after-ready smoke job covers the initial deployment, when Rollouts skips canary analysis. Initial failure marks the release unsuccessful but has no previous stable revision to restore. Controller/infrastructure error handling and actual traffic behavior require runtime verification.
 
-`disruption.handover: true` creates Understudy protection for an overlap-safe Deployment/Rollout. `maxWait` defaults to `10m`; `name` can preserve its resource identity. It is incompatible with `replace` and resource-only services. Argo mode supplies initial workload replicas and Understudy baseline from the same `capacity.instances`; Helm mode retains reactive protection. See [capacity ownership](../../docs/integrations.md).
+`disruption.surgeBeforeEviction: true` starts a replacement pod and waits for it to be ready before a planned eviction (drain, consolidation, spot notice) removes the current one, through an Understudy resource, for an overlap-safe Deployment/Rollout. `maxWait` defaults to `10m`; `name` can preserve its resource identity. It is incompatible with `replace` and resource-only services. Argo mode supplies initial workload replicas and Understudy baseline from the same `capacity.instances`; Helm mode retains reactive protection. See [capacity ownership](../../docs/integrations.md).
 
 ## Orchestration selectors
 

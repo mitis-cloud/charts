@@ -7,7 +7,8 @@ source: ''
 prefix: ''
 replace: false
 config: null
-placement: any
+publishJob:
+  placement: spot
 timeout: 10m
 tools:
   aws:

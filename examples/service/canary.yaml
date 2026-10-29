@@ -23,7 +23,7 @@ updates:
     environment:
       TARGET_URL: {endpoint: {service: api-candidate}}
 disruption:
-  handover: true
+  surgeBeforeEviction: true
 render:
   engine: argo
   routing: gateway

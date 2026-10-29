@@ -66,7 +66,7 @@ spec:
         {{- end }}
     spec:
       {{- include "mitis.service.pod" (dict "root" . "container" .Values "id" "main" "prefix" "" "init" .Values.init "sidecars" .Values.sidecars "restart" "Always") | nindent 6 }}
-{{- if .Values.disruption.handover }}
+{{- if .Values.disruption.surgeBeforeEviction }}
 ---
 apiVersion: apps.understudy.sh/v1alpha1
 kind: Understudy

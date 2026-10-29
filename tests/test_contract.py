@@ -245,7 +245,6 @@ class ServiceContract(unittest.TestCase):
     def test_projected_identity_tokens_rotate_and_are_explicit(self):
         values = {
             "account": "identity-client",
-            "apiToken": False,
             "tokens": {
                 "federation": {
                     "audience": "sts.amazonaws.com",
@@ -454,6 +453,17 @@ class ServiceContract(unittest.TestCase):
             self.assertNotIn("cpu", pod["containers"][0]["resources"]["limits"])
         render(self.chart, self.base, {"availability": {"zones": 2}}, success=False)
 
+    def test_api_token_follows_chart_owned_access(self):
+        def mounted(values):
+            deployment = resource(render(self.chart, self.base, values), "Deployment")
+            return deployment["spec"]["template"]["spec"]["automountServiceAccountToken"]
+
+        self.assertFalse(mounted({}))
+        self.assertFalse(mounted({"account": "existing"}))
+        self.assertTrue(mounted({"permissions": [{"group": "", "resources": ["pods"], "actions": ["get"]}]}))
+        self.assertTrue(mounted({"outputs": {"token": {"ssm": "token"}}}))
+        render(self.chart, self.base, {"apiToken": True}, success=False)
+
     def test_inputs_helpers_and_whole_image_inheritance(self):
         values = copy.deepcopy(self.base)
         values.update(
@@ -562,7 +572,7 @@ class ServiceContract(unittest.TestCase):
                 "storage": {"work": {"temporary": True}},
                 "mounts": {"work": {"path": "/data", "subdirectory": "a/../b"}},
             },
-            {"updates": {"strategy": "replace"}, "disruption": {"handover": True}},
+            {"updates": {"strategy": "replace"}, "disruption": {"surgeBeforeEviction": True}},
             {"updates": {"strategy": "canary"}},
             {"health": {"readiness": {"tcp": "missing"}}},
             {"workload": "resources", "command": ["silently-ignored"]},

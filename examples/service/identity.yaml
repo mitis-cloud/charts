@@ -1,7 +1,6 @@
 name: identity-client
 image: {repository: example.invalid/identity-client, tag: fixture}
 account: identity-client
-apiToken: false
 tokens:
   federation:
     audience: sts.amazonaws.com

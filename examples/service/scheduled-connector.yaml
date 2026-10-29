@@ -16,6 +16,5 @@ jobs:
     identity: {user: 65532, group: 65532}
     fileGroup: 65532
     security: restricted
-    apiToken: false
     capacity: {cpu: 10m, memory: 64Mi, memoryLimit: 128Mi}
     mounts: {tmp: /tmp}

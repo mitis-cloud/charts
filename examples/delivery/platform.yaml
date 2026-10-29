@@ -14,7 +14,7 @@ environments:
     promotion: automatic
     vars: {stage: test}
     layers: [stages/test.yaml]
-    externallyScaled: true
+    scaledBy: external
     environment:
       maintenance:
         hostnames: [api.example-test.invalid]

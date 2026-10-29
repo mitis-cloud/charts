@@ -24,14 +24,14 @@
 {{- end -}}
 {{- $name := include "mitis.service.name" . -}}
 {{- $identities := dict -}}
-{{- if and (eq $v.workload "resources") (or $v.init $v.sidecars $v.ports $v.health $v.environment $v.tokens $v.mounts (and $v.http (not $v.response)) $v.availability $v.command $v.args $v.identity $v.fileGroup $v.shutdown $v.workingDirectory $v.account $v.security $v.discovery (hasKey $v "apiToken")) -}}
+{{- if and (eq $v.workload "resources") (or $v.init $v.sidecars $v.ports $v.health $v.environment $v.tokens $v.mounts (and $v.http (not $v.response)) $v.availability $v.command $v.args $v.identity $v.fileGroup $v.shutdown $v.workingDirectory $v.account $v.security $v.discovery) -}}
 {{- fail "resource-only services declare container inputs on their jobs, not at the root" -}}{{- end -}}
 {{- if or (gt (len $name) 40) (not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $name)) -}}
 {{- fail "service name/release name must be a DNS label of at most 40 characters" -}}{{- end -}}
 {{- if and $v.availability (lt (int $v.capacity.instances) (int $v.availability.zones)) -}}
 {{- fail "capacity.instances must cover availability.zones; omit availability when no zone constraint is wanted" -}}{{- end -}}
-{{- if and $v.disruption.handover (or (eq $v.updates.strategy "replace") (eq $v.workload "resources")) -}}
-{{- fail "disruption.handover requires an overlap-safe continuous workload" -}}{{- end -}}
+{{- if and $v.disruption.surgeBeforeEviction (or (eq $v.updates.strategy "replace") (eq $v.workload "resources")) -}}
+{{- fail "disruption.surgeBeforeEviction requires an overlap-safe continuous workload" -}}{{- end -}}
 {{- if eq $v.updates.strategy "canary" -}}
 {{- if or (ne $v.render.routing "gateway") (not $v.http) (not $v.updates.smoke) (ne $v.workload "deployment") -}}
 {{- fail "canary requires a continuous workload, gateway routing, http, and an explicit smoke job" -}}{{- end -}}

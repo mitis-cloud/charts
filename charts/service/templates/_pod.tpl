@@ -12,9 +12,7 @@
 {{- end -}}
 restartPolicy: {{ .restart }}
 enableServiceLinks: {{ eq ($c.discovery | default "dns") "environment" }}
-{{- if hasKey $c "apiToken" }}
-automountServiceAccountToken: {{ $c.apiToken }}
-{{- end }}
+automountServiceAccountToken: {{ and (not $c.account) (eq (include "mitis.service.ownsAccount" $root) "true") }}
 terminationGracePeriodSeconds: {{ $c.shutdown | default 30 }}
 {{- if or (hasKey $c "fileGroup") (eq ($c.security | default "image-defaults") "restricted") }}
 securityContext:

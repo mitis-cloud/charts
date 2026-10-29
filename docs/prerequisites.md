@@ -45,7 +45,7 @@ The service chart's defaults switch some of these on. A **default** in the "Trig
 | ALB fixed-response actions | `response` services (maintenance pages) | AWS Load Balancer Controller. Ingress mode only |
 | [Gateway API](https://gateway-api.sigs.k8s.io) v1 implementation (tested schema 1.6.3) | `render.routing: gateway` | A Gateway named `public` or `private` in the service's namespace, with an `https` listener, certificates and DNS. Also an `http` listener when `redirectFromHttp` is set |
 | [Argo Rollouts](https://argoproj.github.io/rollouts/) with the [Gateway API traffic plugin](https://rollouts-plugin-trafficrouter-gatewayapi.readthedocs.io) | `updates.strategy: canary` (requires gateway routing) | Both controllers, plugin configuration and RBAC, and spare capacity for a full candidate pool |
-| [Understudy](https://github.com/mitis-cloud/understudy) 0.4.4 | `disruption.handover: true` | The controller and the 0.4.4 CRDs. Helm doesn't upgrade CRDs, so upgrade them explicitly |
+| [Understudy](https://github.com/mitis-cloud/understudy) 0.4.4 | `disruption.surgeBeforeEviction: true` | The controller and the 0.4.4 CRDs. Helm doesn't upgrade CRDs, so upgrade them explicitly |
 | ReadWriteMany storage class | Any `storage` entry with `access: shared` | A class named by `sharedStorage` (for example EFS CSI) and its backing filesystem. Pre-existing volumes for adopted data |
 | Node pools | `placement` other than `any` | Nodes labelled `env=<pool>` with a matching `env=<pool>:NoSchedule` taint |
 | Zone spread | `availability.zones` | Nodes labelled `topology.kubernetes.io/zone` across at least that many zones, with room to schedule in each |

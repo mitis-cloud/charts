@@ -6,4 +6,3 @@ config:
   backendUrl: https://api.example.invalid
   features:
     chats: {enabled: true}
-placement: spot

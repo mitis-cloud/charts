@@ -18,7 +18,12 @@
     "prefix": {"type": "string", "pattern": "^([A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*)?$", "description": "Key prefix inside the bucket."},
     "replace": {"type": "boolean", "description": "Delete objects under the prefix that the build no longer contains."},
     "config": {"type": ["object", "null"], "description": "Published as config.json next to the build."},
-    "placement": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", "description": "Workload pool, using the env node label and taint; any adds no constraint."},
+    "publishJob": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "placement": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", "description": "Workload pool for the publish Job, using the env node label and taint; any adds no constraint."}
+      }
+    },
     "timeout": {"type": "string", "pattern": "^[1-9][0-9]*(s|m|h)$"},
     "tools": {
       "type": "object", "additionalProperties": false,

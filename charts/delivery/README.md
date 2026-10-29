@@ -44,7 +44,7 @@ Optional `environment` holds [environment chart](../environment/README.md) value
 
 Optional `clusterResources` lists additional `{group, kind}` pairs allowed in that environment's AppProject, for example the CRDs and cluster RBAC required by an operator chart. These are explicit grants; wildcards are rejected and other environments retain their own allowlists.
 
-Optional `externallyScaled: true` declares that replica counts change outside Git, for example through scheduled downscaling: Argo ignores `spec.replicas` on Deployments, StatefulSets and Rollouts there, so automatic synchronization does not fight the scaler, and service-chart sources get `render.capacity: external` so their Understudy baseline doesn't either (requires service chart 0.3.1 or later).
+Optional `scaledBy: external` (default `git`) declares that replica counts change outside Git, for example through scheduled downscaling: Argo ignores `spec.replicas` on Deployments, StatefulSets and Rollouts there, so automatic synchronization does not fight the scaler, and service-chart sources get `render.capacity: external` so their Understudy baseline doesn't either (requires service chart 0.3.1 or later).
 
 Every environment selects its services explicitly:
 

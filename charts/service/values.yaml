@@ -25,7 +25,7 @@ updates:
   reload: true
   reloadSecrets: true
 disruption:
-  handover: false
+  surgeBeforeEviction: false
 # Orchestration selects stable owners; service authors normally omit this.
 render:
   engine: helm

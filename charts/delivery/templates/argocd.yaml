@@ -27,7 +27,7 @@ spec:
             routing: {{ $env.routing | default "gateway" }}
             charts: {{ toJson $env.charts }}
             layers: {{ toJson ($env.layers | default list) }}
-            externallyScaled: {{ $env.externallyScaled | default false }}
+            scaledBy: {{ $env.scaledBy | default "git" }}
             services: {{ include "mitis.delivery.services" (dict "root" $root "env" $env "unit" $unitName) }}
           {{- end }}
   # Sources live in the patch: each environment inserts its own layers between the service and its overrides.
@@ -65,7 +65,7 @@ spec:
                 value: '{{ "{{ .routing }}" }}'
               - name: {{ $prefix }}render.order
                 value: {{ $service.order | default 0 | quote }}
-              {{ "{{- if .externallyScaled }}" }}
+              {{ "{{- if eq .scaledBy \"external\" }}" }}
               - name: {{ $prefix }}render.capacity
                 value: external
               {{ "{{- end }}" }}
@@ -107,7 +107,7 @@ spec:
         {{ "{{- end }}" }}
         {{- end }}
         {{- end }}
-        {{ "{{- if .externallyScaled }}" }}
+        {{ "{{- if eq .scaledBy \"external\" }}" }}
         # Replica counts belong to the environment's scaler (for example scheduled downscaling), not to Git.
         {{- range $kind := list "Deployment" "StatefulSet" }}
         - group: apps
