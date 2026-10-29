@@ -44,8 +44,9 @@ spec:
               annotations:
                 gotemplating.fn.crossplane.io/composition-resource-name: namespace
                 gotemplating.fn.crossplane.io/ready: "True"
+            {{- $overrides := dig $namespace (dict) ($platform.exposureOverrides | default (dict)) }}
             {{- range $exposure := $spec.exposures }}
-            {{- $profile := index $platform.exposure $exposure }}
+            {{- $profile := mergeOverwrite (deepCopy (index $platform.exposure $exposure)) (dig $exposure (dict) $overrides) }}
             ---
             apiVersion: elbv2.k8s.aws/v1beta1
             kind: IngressClassParams

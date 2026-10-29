@@ -103,6 +103,22 @@ class AwsEnvironmentComposition(unittest.TestCase):
             [{"key": "routing.http.xff_header_processing.mode", "value": "remove"}],
         )
 
+    def test_namespace_exposure_overrides_replace_group_and_add_waf(self):
+        with tempfile.TemporaryDirectory() as directory:
+            values = Path(directory) / "guarded.yaml"
+            values.write_text(yaml.safe_dump({"namespace": "guarded"}))
+            docs = self.composed(values)
+        public = resource(docs, "IngressClassParams", "guarded-public")["spec"]
+        private = resource(docs, "IngressClassParams", "guarded-private")["spec"]
+        self.assertEqual(public["group"]["name"], "guarded-alb")
+        self.assertTrue(public["wafv2AclArn"].startswith("arn:aws:wafv2:"))
+        self.assertEqual(public["loadBalancerAttributes"], [{"key": "routing.http.xff_header_processing.mode", "value": "remove"}])
+        self.assertEqual(private["group"]["name"], "guarded-alb-private")
+        self.assertEqual(private["inboundCIDRs"], ["192.0.2.0/24"])
+        self.assertNotIn("wafv2AclArn", private)
+        example = resource(self.composed(), "IngressClassParams", "example-public")["spec"]
+        self.assertNotIn("wafv2AclArn", example)
+
     def test_isolation_allows_only_declared_private_ports(self):
         policy = resource(self.composed(), "NetworkPolicy", "environment-isolation")
         self.assertEqual(policy["spec"]["policyTypes"], ["Egress"])

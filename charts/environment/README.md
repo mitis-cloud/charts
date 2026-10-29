@@ -50,6 +50,11 @@ Removing the release or its Argo CD Application leaves the `Environment` in plac
         group: example-alb-private
         scheme: internal
         inboundCIDRs: [192.0.2.0/24]  # optional
+    exposureOverrides:                # optional; per namespace and exposure, replaces group and/or wafAclArn
+      guarded:
+        public:
+          group: guarded-alb
+          wafAclArn: arn:aws:wafv2:...
     privateNetworks: [198.51.100.0/24]
     region: eu-west-1                 # needed for webapps
     cluster:
