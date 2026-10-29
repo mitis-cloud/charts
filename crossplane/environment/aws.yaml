@@ -177,6 +177,9 @@ spec:
               {{- with $webapp.cachedPaths }}
               cachedPaths: {{ toJson . }}
               {{- end }}
+              {{- with $webapp.origin }}
+              origin: {{ toJson . }}
+              {{- end }}
               maintenance:
                 enabled: {{ dig "maintenance" "enabled" false $spec }}
                 body: {{ dig "maintenance" "body" "Service under maintenance." $spec | toJson }}

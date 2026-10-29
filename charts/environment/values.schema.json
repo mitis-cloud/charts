@@ -243,7 +243,7 @@
     },
     "webapps": {
       "type": "object",
-      "description": "Static web applications by name, sharing the environment's maintenance switch.",
+      "description": "Web applications by name, sharing the environment's maintenance switch.",
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
@@ -264,7 +264,64 @@
           "mode": {
             "enum": [
               "application",
-              "files"
+              "files",
+              "origin"
+            ]
+          },
+          "origin": {
+            "type": "object",
+            "description": "The existing HTTPS origin served in origin mode, which only answers requests carrying the secret header.",
+            "additionalProperties": false,
+            "required": [
+              "hostname",
+              "secretRef"
+            ],
+            "properties": {
+              "hostname": {
+                "type": "string",
+                "minLength": 1
+              },
+              "secretRef": {
+                "type": "object",
+                "description": "Secret in the environment namespace holding the secret header value.",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "key"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "key": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "if": {
+          "properties": {
+            "mode": {
+              "const": "origin"
+            }
+          },
+          "required": [
+            "mode"
+          ]
+        },
+        "then": {
+          "required": [
+            "origin"
+          ]
+        },
+        "else": {
+          "not": {
+            "required": [
+              "origin"
             ]
           }
         }

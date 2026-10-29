@@ -115,16 +115,27 @@ spec:
                           enum: [admin, operator, reader]
                 webapps:
                   type: object
-                  description: Static web applications by name. They share the environment's maintenance switch and body, and publish their storage and CDN identifiers under <prefix><name>.
+                  description: Web applications by name. They share the environment's maintenance switch and body, and publish their storage and CDN identifiers under <prefix><name>.
                   additionalProperties:
                     type: object
                     required: [hostname]
                     properties:
                       hostname: {type: string}
-                      mode: {type: string, enum: [application, files]}
+                      mode: {type: string, enum: [application, files, origin]}
                       cachedPaths:
                         type: array
                         items: {type: string}
+                      origin:
+                        type: object
+                        required: [hostname, secretRef]
+                        properties:
+                          hostname: {type: string}
+                          secretRef:
+                            type: object
+                            required: [name, key]
+                            properties:
+                              name: {type: string}
+                              key: {type: string}
                 maintenance:
                   type: object
                   description: While enabled, the listed public hostnames answer with a fixed response instead of reaching services.

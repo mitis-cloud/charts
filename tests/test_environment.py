@@ -4,9 +4,11 @@ import subprocess
 import tempfile
 import unittest
 
+import jsonschema
 import yaml
 
 from test_contract import ROOT, documents, render, resource
+from validate_resources import CACHE, download, strict_schema
 
 
 CROSSPLANE = ROOT / "crossplane"
@@ -166,6 +168,17 @@ class AwsEnvironmentComposition(unittest.TestCase):
         self.assertTrue(webapp["spec"]["maintenance"]["enabled"])
         self.assertEqual(webapp["spec"]["maintenance"]["body"], "<p>Back soon.</p>")
         self.assertEqual(webapp["spec"]["outputs"], {"store": "aws-ssm", "key": "example-portal"})
+
+    def test_origin_webapps_pass_their_origin(self):
+        origin = {"hostname": "assets-origin.app.example.invalid", "secretRef": {"name": "nginx-assets", "key": "origin-secret"}}
+        docs = self.composed({"webapps": {"assets": {"hostname": "assets.app.example.invalid", "mode": "origin", "origin": origin}}})
+        webapp = resource(docs, "Webapp", "assets")
+        self.assertEqual((webapp["spec"]["mode"], webapp["spec"]["origin"]), ("origin", origin))
+
+    def test_only_origin_webapps_take_an_origin(self):
+        origin = {"hostname": "assets-origin.app.example.invalid", "secretRef": {"name": "nginx-assets", "key": "origin-secret"}}
+        render(self.chart, ROOT / "examples/environment/values.yaml", {"webapps": {"assets": {"hostname": "a.example.invalid", "mode": "origin"}}}, success=False)
+        render(self.chart, ROOT / "examples/environment/values.yaml", {"webapps": {"assets": {"hostname": "a.example.invalid", "origin": origin}}}, success=False)
 
     def test_database_physical_name_is_independent_of_its_environment_key(self):
         docs = self.composed({"databases": {"backend": {"name": "legacy_analytics"}}})
@@ -358,6 +371,53 @@ class AwsWebappComposition(unittest.TestCase):
         self.assertNotIn("functionAssociation", behavior)
         # The CRD rejects null: an empty list.
         self.assertNotIn("orderedCacheBehavior", docs["distribution"]["spec"]["forProvider"])
+
+    def composed_origin(self, observed=None, secret=True):
+        xr = yaml.safe_load((ROOT / "examples/crossplane/webapp.yaml").read_text())
+        xr["spec"].update({"mode": "origin", "origin": {"hostname": "portal-origin.app.example.invalid", "secretRef": {"name": "assets-origin", "key": "header"}}})
+        del xr["spec"]["outputs"]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "xr.yaml"
+            path.write_text(yaml.safe_dump(xr))
+            command = [
+                "crossplane", "render", str(path), str(self.composition), str(FIXTURES / "functions.yaml"),
+                "--required-resources", str(FIXTURES / "platform-aws.yaml"),
+            ]
+            if secret:
+                command += ["--required-resources", str(FIXTURES / "origin-secret.yaml")]
+            if observed:
+                command += ["--observed-resources", str(FIXTURES / observed)]
+            result = subprocess.run(command, text=True, capture_output=True)
+            if result.returncode:
+                raise AssertionError(result.stderr)
+            return {
+                d["metadata"]["annotations"]["crossplane.io/composition-resource-name"]: d
+                for d in documents(result.stdout)[1:]
+            }
+
+    def test_origin_mode_waits_for_its_secret(self):
+        docs = self.composed_origin("webapp-observed.yaml", secret=False)
+        self.assertNotIn("distribution", docs)
+        self.assertIn("certificate", docs)
+
+    def test_origin_mode_fronts_the_origin_without_storage(self):
+        docs = self.composed_origin("webapp-observed.yaml")
+        self.assertEqual(sorted(docs), ["certificate", "distribution", "record-a", "record-aaaa", "validation"])
+        distribution = docs["distribution"]["spec"]["forProvider"]
+        origin = distribution["origin"][0]
+        self.assertEqual(origin["domainName"], "portal-origin.app.example.invalid")
+        self.assertEqual(origin["customOriginConfig"]["originProtocolPolicy"], "https-only")
+        self.assertEqual(origin["customHeader"], [{"name": "X-CloudFront-Secret", "value": "s3cret"}])
+        behavior = distribution["defaultCacheBehavior"]
+        self.assertEqual(behavior["targetOriginId"], "portal-origin.app.example.invalid")
+        self.assertEqual(behavior["cachePolicyId"], "658327ea-f89d-4fab-a63d-7e88639e58f6")
+        self.assertNotIn("functionAssociation", behavior)
+        for absent in ["loggingConfig", "defaultRootObject", "orderedCacheBehavior"]:
+            self.assertNotIn(absent, distribution)
+        CACHE.mkdir(parents=True, exist_ok=True)
+        crd = yaml.safe_load(download("https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.9.0/package/crds/cloudfront.aws.m.upbound.io_distributions.yaml"))
+        version = next(v for v in crd["spec"]["versions"] if v["name"] == "v1beta1")
+        jsonschema.Draft7Validator(strict_schema(version["schema"]["openAPIV3Schema"])).validate(docs["distribution"])
 
 
 if __name__ == "__main__":

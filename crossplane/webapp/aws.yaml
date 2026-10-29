@@ -91,7 +91,18 @@ spec:
             {{- $functionArn := dig "function" "resource" "status" "atProvider" "arn" "" $observed }}
             {{- $distribution := dig "distribution" "resource" "status" "atProvider" dict $observed }}
             {{- $tags := dict "Name" (printf "%s-%s-website" $ns $name) }}
-            {{- $application := ne ($spec.mode | default "application") "files" }}
+            {{- $application := eq ($spec.mode | default "application") "application" }}
+            {{- $upstream := and (eq $spec.mode "origin") $spec.origin }}
+            {{- $originSecret := "" }}
+            {{- with $upstream }}
+            {{- $extra := index ($.extraResources | default dict) "origin-secret" | default dict }}
+            {{- range $extra.items }}{{ $originSecret = dig "resource" "data" $upstream.secretRef.key "" . | b64dec }}{{ end }}
+            ---
+            apiVersion: meta.gotemplating.fn.crossplane.io/v1alpha1
+            kind: ExtraResources
+            requirements:
+              origin-secret: {apiVersion: v1, kind: Secret, namespace: {{ $ns }}, matchName: {{ .secretRef.name }}}
+            {{- else }}
             {{- $s3 := list }}
             {{- range $prefix, $target := dict "website" $bucket "logs" $logs }}
             {{- $s3 = append $s3 (dict "kind" "BucketOwnershipControls" "id" (printf "%s-ownership" $prefix) "forProvider" (dict "bucket" $target "rule" (dict "objectOwnership" "BucketOwnerPreferred"))) }}
@@ -140,6 +151,7 @@ spec:
             spec:
               forProvider:
                 comment: OAI to restrict access to AWS S3 content
+            {{- end }}
             {{- if $application }}
             {{- $code := include "function-code" (dict "maintenance" (dig "maintenance" "enabled" false $spec) "body" (dig "maintenance" "body" "Service under maintenance." $spec | toJson)) }}
             ---
@@ -214,7 +226,7 @@ spec:
                 ttl: 300
                 allowOverwrite: true
             {{- end }}
-            {{- if and $identity.cloudfrontAccessIdentityPath (or $functionArn (not $application)) $certificate.arn }}
+            {{- if and (ternary $originSecret $identity.cloudfrontAccessIdentityPath (not (empty $upstream))) (or $functionArn (not $application)) $certificate.arn }}
             ---
             apiVersion: cloudfront.aws.m.upbound.io/v1beta1
             kind: Distribution
@@ -234,9 +246,30 @@ spec:
                 isIpv6Enabled: true
                 httpVersion: http2
                 priceClass: PriceClass_100
-                defaultRootObject: index.html
                 waitForDeployment: false
                 tags: {{ toJson $tags }}
+                {{- with $upstream }}
+                origin:
+                  - originId: {{ .hostname }}
+                    domainName: {{ .hostname }}
+                    connectionAttempts: 3
+                    connectionTimeout: 10
+                    customOriginConfig:
+                      httpPort: 80
+                      httpsPort: 443
+                      originProtocolPolicy: https-only
+                      originSslProtocols: [TLSv1.2]
+                    customHeader:
+                      - name: X-CloudFront-Secret
+                        value: {{ $originSecret | quote }}
+                defaultCacheBehavior:
+                  targetOriginId: {{ .hostname }}
+                  viewerProtocolPolicy: redirect-to-https
+                  # Managed-CachingOptimized; Managed-AllViewerExceptHostHeader.
+                  cachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+                  originRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+                {{- else }}
+                defaultRootObject: index.html
                 loggingConfig:
                   bucket: {{ $logs }}.s3.amazonaws.com
                   includeCookies: false
@@ -254,6 +287,7 @@ spec:
                   # Managed-CachingDisabled for applications, Managed-CachingOptimized for files; Managed-CORS-S3Origin.
                   cachePolicyId: {{ ternary "4135ea2d-6df8-44a3-9df3-4b5a84be39ad" "658327ea-f89d-4fab-a63d-7e88639e58f6" $application }}
                   originRequestPolicyId: 88a5eaf4-2fd4-4709-b370-b4c650ea3fcf
+                {{- end }}
                   compress: false
                   allowedMethods: [GET, HEAD]
                   cachedMethods: [GET, HEAD]
@@ -311,6 +345,7 @@ spec:
                   zoneId: Z2FDTNDATAQYW2
                   evaluateTargetHealth: false
             {{- end }}
+            {{- if not $upstream }}
             ---
             apiVersion: v1
             kind: Secret
@@ -343,6 +378,8 @@ spec:
                 - match: {secretKey: bucket, remoteRef: {remoteKey: {{ $spec.outputs.key }}-website-bucket-id}}
                 - match: {secretKey: distribution, remoteRef: {remoteKey: {{ $spec.outputs.key }}-cloudfront-website-id}}
             {{- end }}
+            {{- end }}
+            {{- if not $upstream }}
             {{- /* The publisher identity lets a deployment job upload the site and invalidate its cache, and nothing else. */}}
             {{- $publisher := printf "%s-publisher" $name }}
             ---
@@ -404,6 +441,7 @@ spec:
                 namespace: {{ $ns }}
                 serviceAccount: {{ $publisher }}
                 roleArnRef: {name: {{ $publisher }}}
+            {{- end }}
     - step: ready
       functionRef:
         name: crossplane-contrib-function-auto-ready

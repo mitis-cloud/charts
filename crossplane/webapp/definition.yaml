@@ -18,8 +18,11 @@ spec:
           properties:
             spec:
               type: object
-              description: A static single-page web application served over HTTPS from object storage through a CDN. Its build is uploaded separately.
-              required: [hostname, outputs]
+              description: A web application served over HTTPS through a CDN, from object storage (its build uploaded separately) or from an existing origin.
+              required: [hostname]
+              x-kubernetes-validations:
+                - rule: "self.mode == 'origin' ? has(self.origin) : has(self.outputs)"
+                  message: Origin mode needs origin; the other modes need outputs.
               properties:
                 hostname:
                   type: string
@@ -29,8 +32,8 @@ spec:
                       message: A webapp cannot change hostname.
                 mode:
                   type: string
-                  description: application routes every non-file path to the single-page application, answers maintenance and caches only cachedPaths; files serves stored files as they are, all cached, and ignores maintenance.
-                  enum: [application, files]
+                  description: application routes every non-file path to the single-page application, answers maintenance and caches only cachedPaths; files serves stored files as they are, all cached, and ignores maintenance; origin caches everything from origin and ignores maintenance.
+                  enum: [application, files, origin]
                   default: application
                 cachedPaths:
                   type: array
@@ -43,6 +46,19 @@ spec:
                   properties:
                     enabled: {type: boolean, default: false}
                     body: {type: string, default: Service under maintenance.}
+                origin:
+                  type: object
+                  description: The existing HTTPS origin served in origin mode. It must only answer requests carrying the secret header.
+                  required: [hostname, secretRef]
+                  properties:
+                    hostname: {type: string, description: Origin hostname, whose certificate the origin presents.}
+                    secretRef:
+                      type: object
+                      description: Secret in this namespace holding the secret header value.
+                      required: [name, key]
+                      properties:
+                        name: {type: string}
+                        key: {type: string}
                 outputs:
                   type: object
                   description: Where the storage and CDN identifiers that upload tooling needs are published.
