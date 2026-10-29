@@ -218,12 +218,6 @@
                     "read-execute",
                     "none"
                   ]
-                },
-                "existingFunctions": {
-                  "type": "boolean"
-                },
-                "adminMaintain": {
-                  "type": "boolean"
                 }
               }
             }

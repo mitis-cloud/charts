@@ -76,16 +76,14 @@ spec:
             {{- if ne $schema "public" }}
             {{- $mrs = append $mrs (dict "kind" "Schema" "id" (printf "schema-%s" $schema) "external" $schema "forProvider" (dict "database" $db "role" $groups.admin)) }}
             {{- end }}
-            {{- $functions := ternary true $cfg.existingFunctions (not (hasKey $cfg "existingFunctions")) }}
             {{- $levels := dict "admin" $adminAccess "operator" (index $access $cfg.operator) "reader" (index $access $cfg.reader) }}
             {{- range $group, $level := $levels }}
             {{- $table := $level.table }}
-            {{- if and (eq $group "admin") $cfg.adminMaintain }}{{ $table = append $table "MAINTAIN" }}{{ end }}
             {{- $role := index $groups $group }}
             {{- if $level.schema }}{{ $mrs = append $mrs (dict "kind" "Grant" "id" (printf "%s-%s-schema" $schema $group) "forProvider" (dict "database" $db "schema" $schema "role" $role "privileges" $level.schema)) }}{{ end }}
             {{- if $table }}{{ $mrs = append $mrs (dict "kind" "Grant" "id" (printf "%s-%s-table" $schema $group) "forProvider" (dict "database" $db "schema" $schema "role" $role "tables" (list "*") "privileges" $table)) }}{{ end }}
             {{- if $level.sequence }}{{ $mrs = append $mrs (dict "kind" "Grant" "id" (printf "%s-%s-sequence" $schema $group) "forProvider" (dict "database" $db "schema" $schema "role" $role "sequences" (list "*") "privileges" $level.sequence)) }}{{ end }}
-            {{- if and $level.function $functions }}{{ $mrs = append $mrs (dict "kind" "Grant" "id" (printf "%s-%s-function" $schema $group) "forProvider" (dict "database" $db "schema" $schema "role" $role "routines" (list (dict "name" "*")) "privileges" $level.function)) }}{{ end }}
+            {{- if $level.function }}{{ $mrs = append $mrs (dict "kind" "Grant" "id" (printf "%s-%s-function" $schema $group) "forProvider" (dict "database" $db "schema" $schema "role" $role "routines" (list (dict "name" "*")) "privileges" $level.function)) }}{{ end }}
             {{- range $owner, $ownerRole := $owners }}
             {{- range $type := list "table" "sequence" "function" }}
             {{- $privileges := index $level $type }}

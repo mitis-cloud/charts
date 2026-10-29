@@ -41,14 +41,6 @@ spec:
                     properties:
                       operator: {type: string, enum: [full, read, read-execute, none]}
                       reader: {type: string, enum: [full, read, read-execute, none]}
-                      existingFunctions:
-                        type: boolean
-                        default: true
-                        description: Grant on functions that already exist, not only on future ones.
-                      adminMaintain:
-                        type: boolean
-                        default: false
-                        description: Also grant MAINTAIN on tables to the admin group.
                 accounts:
                   type: object
                   description: Login roles by name and the group each belongs to. Admin accounts act as the admin group, which owns what they create.

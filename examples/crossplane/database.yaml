@@ -7,7 +7,7 @@ spec:
   name: example-backend
   extensions: [pg_trgm]
   schemas:
-    public: {operator: full, reader: read-execute, adminMaintain: true}
+    public: {operator: full, reader: read-execute}
     reporting: {operator: read, reader: read}
   accounts:
     migrator: admin

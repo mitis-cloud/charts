@@ -232,8 +232,7 @@ class PostgresDatabaseComposition(unittest.TestCase):
         )
         self.assertEqual(docs["example-backend-database"]["spec"]["forProvider"]["owner"], "example-backend-group-admin")
         self.assertTrue(docs["example-backend-database-admin"]["spec"]["forProvider"]["revokePublicOnDb"])
-        self.assertIn("MAINTAIN", docs["example-backend-public-admin-table"]["spec"]["forProvider"]["privileges"])
-        self.assertNotIn("MAINTAIN", docs["example-backend-reporting-admin-table"]["spec"]["forProvider"]["privileges"])
+        self.assertNotIn("MAINTAIN", docs["example-backend-public-admin-table"]["spec"]["forProvider"]["privileges"])
         self.assertEqual(docs["example-backend-reporting-operator-table"]["spec"]["forProvider"]["privileges"], ["SELECT"])
         self.assertNotIn("example-backend-reporting-operator-function", docs)
         targets = {
