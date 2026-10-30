@@ -112,7 +112,6 @@ spec:
             {{- $s3 = append $s3 (dict "kind" "Bucket" "id" "website-bucket" "external" $bucket "forProvider" (dict "tags" $tags)) }}
             {{- $s3 = append $s3 (dict "kind" "Bucket" "id" "logs-bucket" "external" $logs "forProvider" dict) }}
             {{- $s3 = append $s3 (dict "kind" "BucketVersioning" "id" "website-versioning" "forProvider" (dict "bucket" $bucket "versioningConfiguration" (dict "status" "Enabled"))) }}
-            {{- $s3 = append $s3 (dict "kind" "BucketCorsConfiguration" "id" "website-cors" "forProvider" (dict "bucket" $bucket "corsRule" (list (dict "allowedHeaders" (list "Authorization" "Content-Length") "allowedMethods" (list "POST" "GET") "allowedOrigins" (list (printf "https://%s" $host)) "maxAgeSeconds" 3600)))) }}
             {{- $s3 = append $s3 (dict "kind" "BucketLogging" "id" "website-logging" "forProvider" (dict "bucket" $bucket "targetBucket" $logs "targetPrefix" "website/")) }}
             {{- $logsPolicy := dict "Version" "2012-10-17" "Statement" (list
                 (dict "Sid" "ServerAccessLogs" "Effect" "Allow" "Principal" (dict "Service" "logging.s3.amazonaws.com") "Action" "s3:PutObject" "Resource" (printf "arn:aws:s3:::%s/*" $logs) "Condition" (dict "ArnLike" (dict "aws:SourceArn" (printf "arn:aws:s3:::%s" $bucket))))
@@ -287,6 +286,8 @@ spec:
                   # Managed-CachingDisabled for applications, Managed-CachingOptimized for files; Managed-CORS-S3Origin.
                   cachePolicyId: {{ ternary "4135ea2d-6df8-44a3-9df3-4b5a84be39ad" "658327ea-f89d-4fab-a63d-7e88639e58f6" $application }}
                   originRequestPolicyId: 88a5eaf4-2fd4-4709-b370-b4c650ea3fcf
+                  # Managed-SimpleCORS: public assets are read cross-origin by the site's webapps.
+                  responseHeadersPolicyId: 60669652-455b-4ae9-85a4-c4c02393f86c
                 {{- end }}
                   compress: false
                   allowedMethods: [GET, HEAD]
@@ -307,6 +308,8 @@ spec:
                     # Managed-CachingOptimized.
                     cachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
                     originRequestPolicyId: 88a5eaf4-2fd4-4709-b370-b4c650ea3fcf
+                    # Managed-SimpleCORS.
+                    responseHeadersPolicyId: 60669652-455b-4ae9-85a4-c4c02393f86c
                     compress: true
                     allowedMethods: [GET, HEAD]
                     cachedMethods: [GET, HEAD]
