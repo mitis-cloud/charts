@@ -324,6 +324,7 @@ class AwsWebappComposition(unittest.TestCase):
         self.assertEqual(distribution["loggingConfig"]["bucket"], "legacy-portal-logs-abc123.s3.amazonaws.com")
         self.assertEqual([b["pathPattern"] for b in distribution["orderedCacheBehavior"]], ["/assets/*"])
         self.assertEqual(distribution["defaultCacheBehavior"]["functionAssociation"][0]["functionArn"], "arn:aws:cloudfront::000000000000:function/legacy-portal-function")
+        self.assertEqual(distribution["defaultCacheBehavior"]["responseHeadersPolicyId"], "60669652-455b-4ae9-85a4-c4c02393f86c")
         self.assertEqual(docs["record-a"]["spec"]["forProvider"]["zoneId"], "Z0000000000NESTED")
         self.assertEqual(docs["validation"]["spec"]["forProvider"]["name"], "_abc.portal.app.example.invalid")
         code = docs["function-code"]["stringData"]["code"]
@@ -365,8 +366,11 @@ class AwsWebappComposition(unittest.TestCase):
             )
         docs = {d["metadata"]["annotations"]["crossplane.io/composition-resource-name"]: d for d in documents(result.stdout)[1:]}
         self.assertNotIn("function", docs)
+        # CORS is served by the CDN, not the bucket.
+        self.assertNotIn("website-cors", docs)
         behavior = docs["distribution"]["spec"]["forProvider"]["defaultCacheBehavior"]
         self.assertEqual(behavior["cachePolicyId"], "658327ea-f89d-4fab-a63d-7e88639e58f6")
+        self.assertEqual(behavior["responseHeadersPolicyId"], "60669652-455b-4ae9-85a4-c4c02393f86c")
         self.assertNotIn("functionAssociation", behavior)
         # The CRD rejects null: an empty list.
         self.assertNotIn("orderedCacheBehavior", docs["distribution"]["spec"]["forProvider"])
