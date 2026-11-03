@@ -825,6 +825,24 @@ class DeliveryContract(unittest.TestCase):
         self.assertEqual({"72h"}, waits("test"))
         self.assertEqual({"15m"}, waits("production"))
 
+    def test_service_layers_sit_after_defaults_and_before_the_service_file(self):
+        values = yaml.safe_load(self.example.read_text())
+        values["releaseUnits"]["worker"]["services"]["worker"]["layers"] = [
+            "shared/worker.yaml",
+            "environments/{environment}/worker-shared.yaml",
+        ]
+        docs = render(self.chart, values)
+        files = self.expanded_sources(docs, "worker", "test")[0]["helm"]["valueFiles"]
+        self.assertEqual(
+            [
+                "$values/shared/worker.yaml",
+                "$values/environments/test/worker-shared.yaml",
+                "$values/environments/test/worker.yaml",
+            ],
+            [f.replace("$values/projects/example/", "$values/") for f in files[-3:]],
+        )
+        self.assertIn("defaults.yaml", files[-4])
+
     def test_delegated_selectors_are_scoped_to_named_services(self):
         values = yaml.safe_load(self.example.read_text())
         values["releaseUnits"]["worker"]["services"]["worker"]["delegatedSelectors"] = ["worker"]

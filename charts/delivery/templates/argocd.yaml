@@ -62,6 +62,9 @@ spec:
               {{ "{{- end }}" }}
               - $values/{{ $root.Values.git.environments }}/{{ "{{ .environment }}" }}/defaults.yaml
               {{- end }}
+              {{- range $layer := $service.layers }}
+              - $values/{{ replace "{environment}" "{{ .environment }}" $layer }}
+              {{- end }}
               - $values/{{ $root.Values.git.environments }}/{{ "{{ .environment }}" }}/{{ $serviceName }}.yaml
             ignoreMissingValueFiles: false
             {{- with $chart.serviceScopes }}
