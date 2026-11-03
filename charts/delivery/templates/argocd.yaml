@@ -106,17 +106,6 @@ spec:
           jsonPointers: [/metadata/labels/rollouts.argoproj.io~1gatewayapi-canary]
           jqPathExpressions: ['.spec.rules[].backendRefs[].weight']
         {{- range $serviceName, $service := $unit.services }}
-        {{- if $service.delegatedSelectors }}
-        {{ printf "{{- if index .services %q }}" $serviceName }}
-        {{- range $selector := $service.delegatedSelectors }}
-        - group: ''
-          kind: Service
-          name: {{ $selector }}
-          namespace: '{{ "{{ .namespace }}" }}'
-          jsonPointers: [/spec/selector]
-        {{- end }}
-        {{ "{{- end }}" }}
-        {{- end }}
         {{- if $service.capacityTargets }}
         {{ printf "{{- if index .services %q }}" $serviceName }}
         {{- range $target := $service.capacityTargets }}

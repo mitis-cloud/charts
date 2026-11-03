@@ -3,7 +3,8 @@
 {{- $root := . -}}
 {{- $name := include "mitis.service.name" . -}}
 {{- $canary := not (empty (include "mitis.service.rollout" $)) -}}
-{{- $services := list $name -}}
+{{- /* A mesh canary's controller owns its Service: Argo applying one could point traffic at pods that aren't ready. */}}
+{{- $services := ternary (list) (list $name) (not (empty (include "mitis.service.meshCanary" .))) -}}
 {{- if $canary -}}{{ $services = append $services (printf "%s-candidate" $name) }}{{- end -}}
 {{- if .Values.ports -}}
 {{- range $service := $services }}
@@ -24,8 +25,7 @@ spec:
     {{- range $portName, $port := $root.Values.ports }}
     - name: {{ $portName }}
       port: {{ if kindIs "map" $port }}{{ $port.listen }}{{ else if eq $portName "http" }}80{{ else }}{{ $port }}{{ end }}
-      {{- /* gRPC is numeric in mesh canaries: the primary keeps serving under its previous port name until promotion. */}}
-      targetPort: {{ if and (eq $portName "grpc") (include "mitis.service.meshCanary" $root) }}{{ if kindIs "map" $port }}{{ $port.target }}{{ else }}{{ $port }}{{ end }}{{ else }}{{ $portName }}{{ end }}
+      targetPort: {{ $portName }}
       protocol: TCP
       {{- if eq $portName "grpc" }}
       appProtocol: kubernetes.io/h2c

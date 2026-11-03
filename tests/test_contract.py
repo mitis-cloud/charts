@@ -675,7 +675,7 @@ class ServiceContract(unittest.TestCase):
         self.assertFalse(kinds & {"Rollout", "AnalysisTemplate", "HTTPRoute"})
         deployment = resource(docs, "Deployment")
         self.assertEqual({"app": "gateway"}, deployment["spec"]["selector"]["matchLabels"])
-        self.assertEqual({"app": "gateway"}, resource(docs, "Service")["spec"]["selector"])
+        self.assertFalse([d for d in docs if d["kind"] == "Service"])
         template = deployment["spec"]["template"]
         self.assertEqual("gateway", template["metadata"]["labels"]["app.kubernetes.io/name"])
         self.assertEqual("enabled", template["metadata"]["annotations"]["linkerd.io/inject"])
@@ -697,7 +697,6 @@ class ServiceContract(unittest.TestCase):
         self.assertFalse(canary["skipAnalysis"])
         self.assertEqual(8000, canary["service"]["port"])
         self.assertEqual("http", canary["service"]["targetPort"])
-        self.assertEqual("http", resource(docs, "Service")["spec"]["ports"][0]["targetPort"])
         backend = resource(docs, "Ingress")["spec"]["rules"][0]["http"]["paths"][0]["backend"]
         self.assertEqual({"name": "http"}, backend["service"]["port"])
         self.assertEqual("5xx", canary["service"]["apex"]["annotations"]["retry.linkerd.io/http"])
@@ -718,13 +717,13 @@ class ServiceContract(unittest.TestCase):
         self.assertNotIn("autoscalerRef", canary)
         self.assertEqual("kubernetes.io/h2c", canary["service"]["appProtocol"])
         self.assertEqual(50051, canary["service"]["targetPort"])
-        self.assertEqual(50051, resource(docs, "Service")["spec"]["ports"][0]["targetPort"])
         self.assertEqual(
             "internal,unavailable",
             canary["service"]["apex"]["annotations"]["retry.linkerd.io/grpc"],
         )
+        plain = render(self.chart, self.base, {"ports": {"grpc": 50051}})
         self.assertEqual(
-            "kubernetes.io/h2c", resource(docs, "Service")["spec"]["ports"][0]["appProtocol"]
+            "kubernetes.io/h2c", resource(plain, "Service")["spec"]["ports"][0]["appProtocol"]
         )
         self.assertFalse([d for d in docs if d["kind"] == "HorizontalPodAutoscaler"])
 
@@ -842,19 +841,6 @@ class DeliveryContract(unittest.TestCase):
             [f.replace("$values/projects/example/", "$values/") for f in files[-3:]],
         )
         self.assertIn("defaults.yaml", files[-4])
-
-    def test_delegated_selectors_are_scoped_to_named_services(self):
-        values = yaml.safe_load(self.example.read_text())
-        values["releaseUnits"]["worker"]["services"]["worker"]["delegatedSelectors"] = ["worker"]
-        docs = render(self.chart, values)
-        rules = [
-            r for r in self.expanded_spec(docs, "worker", "test")["ignoreDifferences"]
-            if r.get("jsonPointers") == ["/spec/selector"]
-        ]
-        self.assertEqual(
-            [{"group": "", "kind": "Service", "name": "worker", "namespace": "example-test", "jsonPointers": ["/spec/selector"]}],
-            rules,
-        )
 
     def test_one_warehouse_per_unit_and_one_stage_per_environment(self):
         docs = render(self.chart, self.example)
