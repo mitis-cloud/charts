@@ -696,8 +696,10 @@ class ServiceContract(unittest.TestCase):
         canary = resource(docs, "Canary")["spec"]
         self.assertFalse(canary["skipAnalysis"])
         self.assertEqual(8000, canary["service"]["port"])
-        self.assertEqual(8000, canary["service"]["targetPort"])
-        self.assertEqual(8000, resource(docs, "Service")["spec"]["ports"][0]["targetPort"])
+        self.assertEqual("http", canary["service"]["targetPort"])
+        self.assertEqual("http", resource(docs, "Service")["spec"]["ports"][0]["targetPort"])
+        backend = resource(docs, "Ingress")["spec"]["rules"][0]["http"]["paths"][0]["backend"]
+        self.assertEqual({"name": "http"}, backend["service"]["port"])
         self.assertEqual("5xx", canary["service"]["apex"]["annotations"]["retry.linkerd.io/http"])
         self.assertEqual(
             [("linkerd-http-success-rate", {"min": 99}), ("linkerd-http-request-duration", {"max": 500})],
@@ -715,6 +717,8 @@ class ServiceContract(unittest.TestCase):
         self.assertNotIn("metrics", canary["analysis"])
         self.assertNotIn("autoscalerRef", canary)
         self.assertEqual("kubernetes.io/h2c", canary["service"]["appProtocol"])
+        self.assertEqual(50051, canary["service"]["targetPort"])
+        self.assertEqual(50051, resource(docs, "Service")["spec"]["ports"][0]["targetPort"])
         self.assertEqual(
             "internal,unavailable",
             canary["service"]["apex"]["annotations"]["retry.linkerd.io/grpc"],
