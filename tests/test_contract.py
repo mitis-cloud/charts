@@ -675,7 +675,7 @@ class ServiceContract(unittest.TestCase):
         self.assertFalse(kinds & {"Rollout", "AnalysisTemplate", "HTTPRoute"})
         deployment = resource(docs, "Deployment")
         self.assertEqual({"app": "gateway"}, deployment["spec"]["selector"]["matchLabels"])
-        self.assertEqual({"app": "gateway"}, resource(docs, "Service")["spec"]["selector"])
+        self.assertFalse([d for d in docs if d["kind"] == "Service"])
         template = deployment["spec"]["template"]
         self.assertEqual("gateway", template["metadata"]["labels"]["app.kubernetes.io/name"])
         self.assertEqual("enabled", template["metadata"]["annotations"]["linkerd.io/inject"])
@@ -697,7 +697,6 @@ class ServiceContract(unittest.TestCase):
         self.assertFalse(canary["skipAnalysis"])
         self.assertEqual(8000, canary["service"]["port"])
         self.assertEqual("http", canary["service"]["targetPort"])
-        self.assertEqual("http", resource(docs, "Service")["spec"]["ports"][0]["targetPort"])
         backend = resource(docs, "Ingress")["spec"]["rules"][0]["http"]["paths"][0]["backend"]
         self.assertEqual({"name": "http"}, backend["service"]["port"])
         self.assertEqual("5xx", canary["service"]["apex"]["annotations"]["retry.linkerd.io/http"])
@@ -718,13 +717,13 @@ class ServiceContract(unittest.TestCase):
         self.assertNotIn("autoscalerRef", canary)
         self.assertEqual("kubernetes.io/h2c", canary["service"]["appProtocol"])
         self.assertEqual(50051, canary["service"]["targetPort"])
-        self.assertEqual(50051, resource(docs, "Service")["spec"]["ports"][0]["targetPort"])
         self.assertEqual(
             "internal,unavailable",
             canary["service"]["apex"]["annotations"]["retry.linkerd.io/grpc"],
         )
+        plain = render(self.chart, self.base, {"ports": {"grpc": 50051}})
         self.assertEqual(
-            "kubernetes.io/h2c", resource(docs, "Service")["spec"]["ports"][0]["appProtocol"]
+            "kubernetes.io/h2c", resource(plain, "Service")["spec"]["ports"][0]["appProtocol"]
         )
         self.assertFalse([d for d in docs if d["kind"] == "HorizontalPodAutoscaler"])
 
