@@ -24,8 +24,8 @@ spec:
     {{- range $portName, $port := $root.Values.ports }}
     - name: {{ $portName }}
       port: {{ if kindIs "map" $port }}{{ $port.listen }}{{ else if eq $portName "http" }}80{{ else }}{{ $port }}{{ end }}
-      {{- /* Numeric for mesh canaries: the primary keeps serving under its previous port names until promotion. */}}
-      targetPort: {{ if include "mitis.service.meshCanary" $root }}{{ if kindIs "map" $port }}{{ $port.target }}{{ else }}{{ $port }}{{ end }}{{ else }}{{ $portName }}{{ end }}
+      {{- /* gRPC is numeric in mesh canaries: the primary keeps serving under its previous port name until promotion. */}}
+      targetPort: {{ if and (eq $portName "grpc") (include "mitis.service.meshCanary" $root) }}{{ if kindIs "map" $port }}{{ $port.target }}{{ else }}{{ $port }}{{ end }}{{ else }}{{ $portName }}{{ end }}
       protocol: TCP
       {{- if eq $portName "grpc" }}
       appProtocol: kubernetes.io/h2c
@@ -131,7 +131,8 @@ spec:
             backend:
               service:
                 name: {{ $name }}
-                port: {number: {{ $listen }}}
+                {{- /* By name in mesh canaries, which keeps an existing ALB target group across the move to this chart. */}}
+                port: {{ if include "mitis.service.meshCanary" $root }}{name: {{ $portName }}}{{ else }}{number: {{ $listen }}}{{ end }}
           {{- end }}
     {{- end }}
 {{- end }}
