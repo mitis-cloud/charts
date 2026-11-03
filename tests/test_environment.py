@@ -285,8 +285,9 @@ class PostgresDatabaseComposition(unittest.TestCase):
 class AwsWebappComposition(unittest.TestCase):
     composition = CROSSPLANE / "webapp/aws.yaml"
 
-    def composed(self, observed=None):
+    def composed(self, observed=None, **spec):
         xr = yaml.safe_load((ROOT / "examples/crossplane/webapp.yaml").read_text())
+        xr["spec"].update(spec)
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "xr.yaml"
             path.write_text(yaml.safe_dump(xr))
@@ -295,7 +296,10 @@ class AwsWebappComposition(unittest.TestCase):
                 "--required-resources", str(FIXTURES / "platform-aws.yaml"),
             ]
             if observed:
-                command += ["--observed-resources", str(FIXTURES / observed)]
+                fixtures = [observed] if isinstance(observed, str) else observed
+                observed_path = Path(directory) / "observed.yaml"
+                observed_path.write_text("\n---\n".join((FIXTURES / name).read_text() for name in fixtures))
+                command += ["--observed-resources", str(observed_path)]
             result = subprocess.run(command, text=True, capture_output=True)
             if result.returncode:
                 raise AssertionError(result.stderr)
@@ -353,18 +357,7 @@ class AwsWebappComposition(unittest.TestCase):
         self.assertEqual(identity["roleArnRef"], {"name": "portal-publisher"})
 
     def test_files_mode_has_no_function_and_caches_everything(self):
-        xr = yaml.safe_load((ROOT / "examples/crossplane/webapp.yaml").read_text())
-        xr["spec"]["mode"] = "files"
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "xr.yaml"
-            path.write_text(yaml.safe_dump(xr))
-            result = subprocess.run(
-                ["crossplane", "render", str(path), str(self.composition), str(FIXTURES / "functions.yaml"),
-                 "--required-resources", str(FIXTURES / "platform-aws.yaml"),
-                 "--observed-resources", str(FIXTURES / "webapp-observed.yaml")],
-                text=True, capture_output=True, check=True,
-            )
-        docs = {d["metadata"]["annotations"]["crossplane.io/composition-resource-name"]: d for d in documents(result.stdout)[1:]}
+        docs = self.composed("webapp-observed.yaml", mode="files")
         self.assertNotIn("function", docs)
         # CORS is served by the CDN, not the bucket.
         self.assertNotIn("website-cors", docs)
@@ -374,6 +367,47 @@ class AwsWebappComposition(unittest.TestCase):
         self.assertNotIn("functionAssociation", behavior)
         # The CRD rejects null: an empty list.
         self.assertNotIn("orderedCacheBehavior", docs["distribution"]["spec"]["forProvider"])
+
+    def test_files_cors_header_is_unconditional_and_overrides_the_origin(self):
+        docs = self.composed(mode="files")
+        policy = docs["response-headers-policy"]
+        self.assertEqual(policy["kind"], "ResponseHeadersPolicy")
+        self.assertEqual(policy["metadata"]["namespace"], "example")
+        self.assertEqual(policy["spec"]["forProvider"]["name"], "example-portal-public-assets")
+        # SimpleCORS omits the header for requests containing Chromium's Priority header.
+        # A custom response header applies independently of request headers and cache state.
+        self.assertNotIn("corsConfig", policy["spec"]["forProvider"])
+        self.assertEqual(policy["spec"]["forProvider"]["customHeadersConfig"], {
+            "items": [{"header": "Access-Control-Allow-Origin", "value": "*", "override": True}],
+        })
+
+    def test_files_keep_the_distribution_while_the_cors_policy_is_pending(self):
+        docs = self.composed("webapp-observed.yaml", mode="files")
+        self.assertIn("response-headers-policy", docs)
+        self.assertEqual(docs["distribution"]["metadata"]["annotations"]["crossplane.io/external-name"], "E1EXAMPLEDIST")
+        behavior = docs["distribution"]["spec"]["forProvider"]["defaultCacheBehavior"]
+        self.assertEqual(behavior["responseHeadersPolicyId"], "60669652-455b-4ae9-85a4-c4c02393f86c")
+
+    def test_files_attach_the_observed_cors_policy_without_changing_caching(self):
+        docs = self.composed(["webapp-observed.yaml", "webapp-cors-observed.yaml"], mode="files")
+        behavior = docs["distribution"]["spec"]["forProvider"]["defaultCacheBehavior"]
+        self.assertEqual(behavior["responseHeadersPolicyId"], "11111111-2222-3333-4444-555555555555")
+        self.assertEqual(behavior["cachePolicyId"], "658327ea-f89d-4fab-a63d-7e88639e58f6")
+        self.assertEqual(behavior["allowedMethods"], ["GET", "HEAD"])
+        self.assertNotIn("functionAssociation", behavior)
+        self.assertEqual(docs["response-headers-policy"]["metadata"]["annotations"]["crossplane.io/external-name"], "11111111-2222-3333-4444-555555555555")
+        CACHE.mkdir(parents=True, exist_ok=True)
+        for key, plural in [("response-headers-policy", "responseheaderspolicies"), ("distribution", "distributions")]:
+            crd = yaml.safe_load(download(f"https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.9.0/package/crds/cloudfront.aws.m.upbound.io_{plural}.yaml"))
+            version = next(v for v in crd["spec"]["versions"] if v["name"] == "v1beta1")
+            jsonschema.Draft7Validator(strict_schema(version["schema"]["openAPIV3Schema"])).validate(docs[key])
+
+    def test_application_mode_keeps_its_existing_cors_policy(self):
+        docs = self.composed("webapp-observed.yaml")
+        self.assertNotIn("response-headers-policy", docs)
+        distribution = docs["distribution"]["spec"]["forProvider"]
+        for behavior in [distribution["defaultCacheBehavior"], *distribution["orderedCacheBehavior"]]:
+            self.assertEqual(behavior["responseHeadersPolicyId"], "60669652-455b-4ae9-85a4-c4c02393f86c")
 
     def composed_origin(self, observed=None, secret=True):
         xr = yaml.safe_load((ROOT / "examples/crossplane/webapp.yaml").read_text())

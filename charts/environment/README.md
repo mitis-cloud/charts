@@ -26,6 +26,8 @@ An environment is one application namespace and everything its services share: t
 
 See [the example](../../examples/environment/values.yaml) and [values.schema.json](values.schema.json).
 
+On AWS, `mode: files` is public, credential-free content: its response headers policy always sets `Access-Control-Allow-Origin: *`, including on cache hits and requests carrying Chromium's `Priority` header. CORS is handled at the CDN, not the bucket. Each files webapp owns one response headers policy; existing distributions keep their previous policy until the new policy's identifier is observed. This does not change cache keys, TTLs or application/origin modes.
+
 Removing the release or its Argo CD Application leaves the `Environment` in place: deleting it deletes the namespace and every service in it. Delete the `Environment` itself only to retire the environment.
 
 ## Platform package
@@ -110,7 +112,7 @@ Removing the release or its Argo CD Application leaves the `Environment` in plac
   ```
 
 - For databases, a provider-sql `ClusterProviderConfig` with superuser access to the instance, and a secret store that External Secrets can write (PushSecret).
-- For webapps on AWS, the S3, CloudFront, ACM, Route53, IAM and EKS providers with a `default` `ClusterProviderConfig` allowed to manage buckets, distributions, functions, certificates and records in those zones, `<namespace>-<webapp>-publisher` roles (including passing them to EKS) and the cluster's Pod Identity associations.
+- For webapps on AWS, the S3, CloudFront, ACM, Route53, IAM and EKS providers with a `default` `ClusterProviderConfig` allowed to manage buckets, distributions, functions, response headers policies, certificates and records in those zones, `<namespace>-<webapp>-publisher` roles (including passing them to EKS) and the cluster's Pod Identity associations.
 - For object storage and workload identities, the S3 and IAM providers with permission to manage the selected buckets, roles, policies and attachments. Node assumption additionally requires managing an inline policy on the configured worker role. Source the identity and external-storage facts from the infrastructure that owns them.
 
 The package declares every function and provider it can use. A platform may install it with `skipDependencyResolution` and install only what its clusters need.

@@ -1,0 +1,11 @@
+apiVersion: cloudfront.aws.m.upbound.io/v1beta1
+kind: ResponseHeadersPolicy
+metadata:
+  name: portal-response-headers-policy
+  namespace: example
+  annotations:
+    crossplane.io/composition-resource-name: response-headers-policy
+    crossplane.io/external-name: 11111111-2222-3333-4444-555555555555
+status:
+  atProvider:
+    id: 11111111-2222-3333-4444-555555555555
