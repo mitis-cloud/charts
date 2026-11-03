@@ -50,6 +50,8 @@ Optional `sync: automatic` applies Git changes to promoted units straight away, 
 
 Optional `syncWindows` lists when an environment may sync, each with a cron `schedule`, a `duration` and a `timeZone`. Nothing syncs outside them, including manual syncs. A promotion waits up to 72 hours for the next window instead of the usual 15 minutes, which also bounds how far apart windows can be.
 
+A service's optional `layers` lists repository-relative values files for that service alone, applied after the environment's `defaults.yaml` and before its own environment file. `{environment}` in a path becomes the environment's name, for example `projects/shop/environments/{environment}/backend.yaml`. Use them for what the processes of one application share when an environment runs several applications.
+
 A service's optional `delegatedSelectors` lists Services whose selectors a canary controller rewrites, so Argo ignores those selectors.
 
 Every environment selects its services explicitly:
