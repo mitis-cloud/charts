@@ -675,6 +675,7 @@ class ServiceContract(unittest.TestCase):
         self.assertFalse(kinds & {"Rollout", "AnalysisTemplate", "HTTPRoute"})
         deployment = resource(docs, "Deployment")
         self.assertEqual({"app": "gateway"}, deployment["spec"]["selector"]["matchLabels"])
+        self.assertNotIn("replicas", deployment["spec"])
         self.assertFalse([d for d in docs if d["kind"] == "Service"])
         template = deployment["spec"]["template"]
         self.assertEqual("gateway", template["metadata"]["labels"]["app.kubernetes.io/name"])

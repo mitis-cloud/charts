@@ -15,7 +15,10 @@ metadata:
     reloader.stakater.com/rollout-strategy: annotations
     {{- end }}
 spec:
+  {{- /* A mesh canary's controller and autoscaler own its replicas. */}}
+  {{- if not (include "mitis.service.meshCanary" .) }}
   replicas: {{ .Values.capacity.instances }}
+  {{- end }}
   revisionHistoryLimit: 3
   selector:
     matchLabels:
