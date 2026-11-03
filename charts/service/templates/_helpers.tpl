@@ -9,9 +9,30 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | quote }}
 {{- end -}}
 
+{{- /* Mesh canaries select only on app: the controller gives the primary its own value of that label. */}}
 {{- define "mitis.service.selector" -}}
+{{- if include "mitis.service.meshCanary" . -}}
+app: {{ include "mitis.service.name" . }}
+{{- else -}}
 app.kubernetes.io/name: {{ include "mitis.service.name" . }}
 app.kubernetes.io/instance: {{ include "mitis.service.name" . }}
+{{- end -}}
+{{- end -}}
+
+{{- define "mitis.service.podLabels" -}}
+{{- if include "mitis.service.meshCanary" . -}}
+app: {{ include "mitis.service.name" . }}
+{{ end -}}
+app.kubernetes.io/name: {{ include "mitis.service.name" . }}
+app.kubernetes.io/instance: {{ include "mitis.service.name" . }}
+{{- end -}}
+
+{{- define "mitis.service.meshCanary" -}}
+{{- if and .Values.mesh (eq .Values.updates.strategy "canary") -}}true{{- end -}}
+{{- end -}}
+
+{{- define "mitis.service.rollout" -}}
+{{- if and (not .Values.mesh) (eq .Values.updates.strategy "canary") -}}true{{- end -}}
 {{- end -}}
 
 {{- define "mitis.service.image" -}}

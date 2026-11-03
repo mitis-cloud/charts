@@ -21,7 +21,10 @@ The service definition is a closed interface. [values.schema.json](values.schema
 | `capacity.memory` | `128Mi` | Memory reservation. |
 | `capacity.memoryLimit` | `256Mi` | Memory ceiling. |
 | `capacity.cpuLimit` | omitted | Optional CPU ceiling; CPU is uncapped by default. |
-| `availability.zones` | omitted | Strict zone spread. Instances must cover requested zones; two zones with one unavailable means reduced capacity. |
+| `availability.zones` | omitted | Strict zone spread, ignoring tainted nodes, with a budget of one voluntary disruption and replacement 30 seconds after a node is lost. Instances must cover requested zones; two zones with one unavailable means reduced capacity. |
+| `mesh` | `false` | Joins the service mesh. Connections to ports 5432, 6379 and 9092 bypass it, because those protocols don't need its retries and its protocol detection delays them. |
+| `telemetry.environment` | omitted | Sends OpenTelemetry data to the collector on the instance's node, reporting this environment. Main process only. |
+| `telemetry.service` | service `name` | Reported service name, for processes that report as one application. |
 | `placement` | `any` | An existing workload pool such as `spot`, `stable`, or `analytics`, using the environment's `env` node label/taint convention. `any` adds no pool constraint. |
 | `identity.user`, `.group` | image defaults | Numeric process UID/GID, including zero. |
 | `shutdown` | `30` | Graceful termination budget in seconds. |
@@ -185,6 +188,10 @@ Release jobs are repeatable and failure-gating on full release operations, not e
 `updates.strategy` is `rolling` (default), `replace` (non-overlapping upgrade), or `canary`. `updates.reload` defaults to true: ordinary file/configuration changes update the pod checksum, and the installed Reloader handles referenced ConfigMap/Secret changes. `updates.reloadSecrets` also defaults to true; explicitly disable it to retain configuration-only replacement without activating secret-triggered rollouts. Disable `reload` entirely for self-reloading applications. `updates.restart` is an optional explicit deployment-operation token, never a template clock.
 
 Canary requires Gateway routing, HTTP exposure, and an explicit `updates.smoke` job with application-owned command, timeout, inputs, and resources. It keeps a baseline-sized candidate pool, tests at zero traffic, then tests at 10% and 50% before full promotion. Failed application jobs fail analysis (`failureLimit: 0`); native inconclusive analysis pauses progression. A repeatable after-ready smoke job covers the initial deployment, when Rollouts skips canary analysis. Initial failure marks the release unsuccessful but has no previous stable revision to restore. Controller/infrastructure error handling and actual traffic behavior require runtime verification.
+
+With `mesh: true`, canary needs no smoke job or Gateway: the mesh shifts traffic through Flagger, 10% at a time up to 50%, then promotes. Optional `updates.canary` sets the checks: `maxErrorRate` and `maxLatency` roll back when exceeded, and `testPath` receives generated traffic during analysis. They need an `http` port; omitting them all promotes without analysis. The service needs exactly one port, named `http` or `grpc`, and Argo rendering. `http` needs ingress routing, because the canary owns its route, and `surgeBeforeEviction` is rejected, because the workload it would protect stays at zero replicas between releases. Unless `render.capacity` is `external`, a fixed-size autoscaler carries `capacity.instances` to the live pods. In delivery, list the service under `capacityTargets` (kind `Deployment`) and `delegatedSelectors`. Between releases the running pods belong to `<name>-primary`, so changing a service between canary engines replaces its pods.
+
+A port named `grpc` is declared as HTTP/2 cleartext, for proxies and meshes that need the protocol stated.
 
 `disruption.surgeBeforeEviction: true` starts a replacement pod and waits for it to be ready before a planned eviction (drain, consolidation, spot notice) removes the current one, through an Understudy resource, for an overlap-safe Deployment/Rollout. `maxWait` defaults to `10m`; `name` can preserve its resource identity. It is incompatible with `replace` and resource-only services. Argo mode supplies initial workload replicas and Understudy baseline from the same `capacity.instances`; Helm mode retains reactive protection. See [capacity ownership](../../docs/integrations.md).
 

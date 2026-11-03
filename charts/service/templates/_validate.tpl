@@ -24,7 +24,7 @@
 {{- end -}}
 {{- $name := include "mitis.service.name" . -}}
 {{- $identities := dict -}}
-{{- if and (eq $v.workload "resources") (or $v.init $v.sidecars $v.ports $v.health $v.environment $v.tokens $v.mounts (and $v.http (not $v.response)) $v.availability $v.command $v.args $v.identity $v.fileGroup $v.shutdown $v.workingDirectory $v.account $v.security) -}}
+{{- if and (eq $v.workload "resources") (or $v.init $v.sidecars $v.ports $v.health $v.environment $v.tokens $v.mounts (and $v.http (not $v.response)) $v.availability $v.command $v.args $v.identity $v.fileGroup $v.shutdown $v.workingDirectory $v.account $v.security $v.mesh $v.telemetry) -}}
 {{- fail "resource-only services declare container inputs on their jobs, not at the root" -}}{{- end -}}
 {{- if or (gt (len $name) 40) (not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $name)) -}}
 {{- fail "service name/release name must be a DNS label of at most 40 characters" -}}{{- end -}}
@@ -32,7 +32,17 @@
 {{- fail "capacity.instances must cover availability.zones; omit availability when no zone constraint is wanted" -}}{{- end -}}
 {{- if and $v.disruption.surgeBeforeEviction (or (eq $v.updates.strategy "replace") (eq $v.workload "resources")) -}}
 {{- fail "disruption.surgeBeforeEviction requires an overlap-safe continuous workload" -}}{{- end -}}
-{{- if eq $v.updates.strategy "canary" -}}
+{{- if and $v.updates.canary (not (include "mitis.service.meshCanary" .)) -}}
+{{- fail "updates.canary requires canary strategy and mesh" -}}{{- end -}}
+{{- if include "mitis.service.meshCanary" . -}}
+{{- if or (ne $v.workload "deployment") (ne $v.render.engine "argo") -}}{{ fail "a mesh canary requires a continuous workload and Argo rendering" }}{{- end -}}
+{{- if lt (int $v.capacity.instances) 1 -}}{{ fail "canary needs at least one instance" }}{{- end -}}
+{{- if $v.updates.smoke -}}{{ fail "updates.smoke does not apply to a mesh canary; use updates.canary" }}{{- end -}}
+{{- if $v.disruption.surgeBeforeEviction -}}{{ fail "disruption.surgeBeforeEviction targets a workload that a mesh canary keeps at zero replicas" }}{{- end -}}
+{{- if and $v.http (ne $v.render.routing "ingress") -}}{{ fail "a mesh canary owns its route, so http requires ingress routing" }}{{- end -}}
+{{- if or (ne (len $v.ports) 1) (not (or (hasKey $v.ports "http") (hasKey $v.ports "grpc"))) -}}{{ fail "a mesh canary needs exactly one port, named http or grpc" }}{{- end -}}
+{{- if and $v.updates.canary (not (hasKey $v.ports "http")) -}}{{ fail "updates.canary checks need an http port" }}{{- end -}}
+{{- else if eq $v.updates.strategy "canary" -}}
 {{- if or (ne $v.render.routing "gateway") (not $v.http) (not $v.updates.smoke) (ne $v.workload "deployment") -}}
 {{- fail "canary requires a continuous workload, gateway routing, http, and an explicit smoke job" -}}{{- end -}}
 {{- if lt (int $v.capacity.instances) 1 -}}{{ fail "canary needs at least one instance" }}{{- end -}}

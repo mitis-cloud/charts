@@ -1,0 +1,26 @@
+name: gateway
+image:
+  repository: example.invalid/application
+  tag: test-fixture
+capacity:
+  instances: 3
+availability:
+  zones: 3
+mesh: true
+telemetry:
+  environment: production
+ports:
+  http: {target: 8000, listen: 8000}
+http:
+  exposure: public
+  hostname: gateway.test.example.com
+health:
+  readiness: {http: /healthcheck, port: http}
+updates:
+  strategy: canary
+  canary:
+    maxErrorRate: 1%
+    maxLatency: 500ms
+    testPath: /healthcheck
+render:
+  engine: argo

@@ -10,7 +10,7 @@ Read this page before your first deployment. The [integration guide](integration
 
 | The charts render | Your platform provides |
 | --- | --- |
-| Deployments, Rollouts, Jobs, CronJobs | Controllers and CRDs: External Secrets, Reloader, AWS Load Balancer Controller, external-dns, Gateway API, Argo Rollouts, Understudy, Argo CD, Kargo |
+| Deployments, Rollouts, Jobs, CronJobs | Controllers and CRDs: External Secrets, Reloader, AWS Load Balancer Controller, external-dns, Gateway API, Argo Rollouts, Flagger, Linkerd, Understudy, Argo CD, Kargo |
 | Services, Ingresses, HTTPRoutes | IngressClasses and IngressClassParams, Gateways and listeners, load balancers, certificates, DNS zones, WAF |
 | ExternalSecrets, ConfigMaps, generated Secrets | The ClusterSecretStore, the secret backend and its contents, and read access to it |
 | Shared-filesystem PersistentVolumeClaims | Storage classes, CSI drivers, filesystems, access points and pre-existing PersistentVolumes |
@@ -44,7 +44,11 @@ The service chart's defaults switch some of these on. A **default** in the "Trig
 | [external-dns](https://kubernetes-sigs.github.io/external-dns/) | Any `http` exposure in ingress mode | external-dns managing the target zones. Private exposure is annotated for a Route53 private hosted zone |
 | ALB fixed-response actions | `response` services (maintenance pages) | AWS Load Balancer Controller. Ingress mode only |
 | [Gateway API](https://gateway-api.sigs.k8s.io) v1 implementation (tested schema 1.6.3) | `render.routing: gateway` | A Gateway named `public` or `private` in the service's namespace, with an `https` listener, certificates and DNS. Also an `http` listener when `redirectFromHttp` is set |
-| [Argo Rollouts](https://argoproj.github.io/rollouts/) with the [Gateway API traffic plugin](https://rollouts-plugin-trafficrouter-gatewayapi.readthedocs.io) | `updates.strategy: canary` (requires gateway routing) | Both controllers, plugin configuration and RBAC, and spare capacity for a full candidate pool |
+| [Argo Rollouts](https://argoproj.github.io/rollouts/) with the [Gateway API traffic plugin](https://rollouts-plugin-trafficrouter-gatewayapi.readthedocs.io) | `updates.strategy: canary` without `mesh` (requires gateway routing) | Both controllers, plugin configuration and RBAC, and spare capacity for a full candidate pool |
+| [Flagger](https://flagger.app) (tested 1.45.0) | `updates.strategy: canary` with `mesh: true` | The controller with `app` among its selector labels and the `gatewayapi:v1` mesh provider. The `linkerd-http-success-rate` and `linkerd-http-request-duration` MetricTemplates in `flagger-system`, if `maxErrorRate` or `maxLatency` are set. `flagger-loadtester` in `flagger-system`, if `testPath` is set. Spare capacity for the canary pods |
+| [Linkerd](https://linkerd.io) with Gateway API routes | `mesh: true` | The control plane and proxy injector |
+| [Metrics Server](https://github.com/kubernetes-sigs/metrics-server) | A mesh canary with `render.capacity: git` | Container CPU metrics for the fixed-size autoscaler |
+| OpenTelemetry collector | `telemetry` | An OTLP/HTTP receiver on port 4318 of every node |
 | [Understudy](https://github.com/mitis-cloud/understudy) 0.4.4 | `disruption.surgeBeforeEviction: true` | The controller and the 0.4.4 CRDs. Helm doesn't upgrade CRDs, so upgrade them explicitly |
 | ReadWriteMany storage class | Any `storage` entry with `access: shared` | A class named by `sharedStorage` (for example EFS CSI) and its backing filesystem. Pre-existing volumes for adopted data |
 | Node pools | `placement` other than `any` | Nodes labelled `env=<pool>` with a matching `env=<pool>:NoSchedule` taint |
@@ -62,7 +66,7 @@ The service chart's defaults switch some of these on. A **default** in the "Trig
 - Existing application namespaces.
 - Git, OCI and image-registry credentials for Argo CD and Kargo.
 - A Gateway API implementation and per-namespace Gateways. Delivery's per-environment `routing` defaults to `gateway`, so services it deploys use gateway routing unless the environment sets `routing: ingress`.
-- Argo Rollouts and the Gateway API traffic plugin, if any service uses canary.
+- Argo Rollouts and the Gateway API traffic plugin, if any service uses canary without a mesh. Flagger and Linkerd, if any service uses one.
 - Understudy, if any service delegates capacity through `capacityTargets`.
 
 See the [delivery reference](../charts/delivery/README.md) for activation order.

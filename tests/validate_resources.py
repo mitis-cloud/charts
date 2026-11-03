@@ -40,6 +40,7 @@ CRDS = (
         f"{RAW}/kubernetes-sigs/gateway-api/v1.6.3/config/crd/standard/gateway.networking.k8s.io_httproutes.yaml",
         f"{RAW}/external-secrets/external-secrets/helm-chart-2.2.0/deploy/crds/bundle.yaml",
         f"{RAW}/mitis-cloud/understudy/v0.4.4/charts/understudy/crds/apps.understudy.sh_understudies.yaml",
+        f"{RAW}/fluxcd/flagger/v1.45.0/artifacts/flagger/crd.yaml",
     ]
 )
 STEP_BASE = f"{RAW}/akuity/kargo/v1.12.4/pkg/promotion/runner/builtin/schemas/"
@@ -130,8 +131,10 @@ def main():
                     jsonschema.Draft7Validator(schemas[key]).validate(doc)
                 elif "/" not in key[0] or key[0].split("/")[0] in [
                     "apps",
+                    "autoscaling",
                     "batch",
                     "networking.k8s.io",
+                    "policy",
                     "rbac.authorization.k8s.io",
                 ]:
                     native.append(doc)

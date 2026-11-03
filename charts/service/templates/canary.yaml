@@ -1,0 +1,118 @@
+{{- include "mitis.service.validate" . -}}
+{{- if and (has .Values.render.part (list "all" "runtime" "application")) (include "mitis.service.meshCanary" .) -}}
+{{- $name := include "mitis.service.name" . -}}
+{{- $grpc := hasKey .Values.ports "grpc" -}}
+{{- $portName := ternary "grpc" "http" $grpc -}}
+{{- $port := index .Values.ports $portName -}}
+{{- $listen := $port -}}
+{{- if kindIs "map" $port -}}{{ $listen = $port.listen }}{{- else if eq $portName "http" -}}{{ $listen = 80 }}{{- end -}}
+{{- $checks := .Values.updates.canary | default dict -}}
+{{- /* Argo delegates replicas to the canary controller, so a fixed-size HPA carries Git's capacity to the primary. */}}
+{{- $sized := ne .Values.render.capacity "external" -}}
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "mitis.service.labels" . | nindent 4 }}
+  annotations:
+    {{- include "mitis.service.wave" (dict "root" . "wave" 0) | nindent 4 }}
+spec:
+  provider: gatewayapi:v1
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $name }}
+  {{- if $sized }}
+  autoscalerRef:
+    apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    name: {{ $name }}
+  {{- end }}
+  progressDeadlineSeconds: 600
+  skipAnalysis: {{ empty $checks }}
+  service:
+    port: {{ $listen }}
+    portName: {{ $portName }}
+    targetPort: {{ $portName }}
+    {{- if $grpc }}
+    appProtocol: kubernetes.io/h2c
+    {{- end }}
+    gatewayRefs:
+      - name: {{ $name }}
+        namespace: {{ .Release.Namespace }}
+        group: ''
+        kind: Service
+        port: {{ $listen }}
+    unmanagedMetadata:
+      annotations:
+        - argocd.argoproj.io/tracking-id
+        - argocd.argoproj.io/sync-wave
+      labels:
+        - app.kubernetes.io/instance
+    apex:
+      annotations:
+        {{- if $grpc }}
+        retry.linkerd.io/grpc: internal,unavailable
+        {{- else }}
+        retry.linkerd.io/http: 5xx
+        {{- end }}
+        retry.linkerd.io/limit: '3'
+        retry.linkerd.io/timeout: 5s
+  analysis:
+    interval: 30s
+    threshold: 5
+    maxWeight: 50
+    stepWeight: 10
+    {{- if or $checks.maxErrorRate $checks.maxLatency }}
+    metrics:
+      {{- with $checks.maxErrorRate }}
+      - name: linkerd-http-success-rate
+        templateRef: {name: linkerd-http-success-rate, namespace: flagger-system}
+        interval: 1m
+        thresholdRange: {min: {{ subf 100 (trimSuffix "%" .) }}}
+      {{- end }}
+      {{- with $checks.maxLatency }}
+      - name: linkerd-http-request-duration
+        templateRef: {name: linkerd-http-request-duration, namespace: flagger-system}
+        interval: 1m
+        thresholdRange: {max: {{ trimSuffix "ms" . }}}
+      {{- end }}
+    {{- end }}
+    {{- with $checks.testPath }}
+    webhooks:
+      - name: load-test
+        type: rollout
+        url: http://flagger-loadtester.flagger-system/
+        timeout: 15s
+        metadata:
+          type: cmd
+          cmd: hey -z 1m -q 10 -c 2 http://{{ $name }}.{{ $.Release.Namespace }}:{{ $listen }}{{ . }}
+    {{- end }}
+{{- if $sized }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "mitis.service.labels" . | nindent 4 }}
+  annotations:
+    {{- include "mitis.service.wave" (dict "root" . "wave" 0) | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $name }}
+  minReplicas: {{ .Values.capacity.instances }}
+  maxReplicas: {{ .Values.capacity.instances }}
+  metrics:
+    - type: ContainerResource
+      containerResource:
+        container: main
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 80
+{{- end }}
+{{- end }}

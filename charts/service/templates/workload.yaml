@@ -1,7 +1,7 @@
 {{- include "mitis.service.validate" . -}}
 {{- if and (has .Values.render.part (list "all" "runtime" "application")) (eq .Values.workload "deployment") -}}
 {{- $name := include "mitis.service.name" . -}}
-{{- $canary := eq .Values.updates.strategy "canary" -}}
+{{- $canary := not (empty (include "mitis.service.rollout" .)) -}}
 apiVersion: {{ ternary "argoproj.io/v1alpha1" "apps/v1" $canary }}
 kind: {{ ternary "Rollout" "Deployment" $canary }}
 metadata:
@@ -56,8 +56,12 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "mitis.service.selector" . | nindent 8 }}
+        {{- include "mitis.service.podLabels" . | nindent 8 }}
       annotations:
+        {{- if .Values.mesh }}
+        linkerd.io/inject: enabled
+        config.linkerd.io/skip-outbound-ports: '5432,6379,9092'
+        {{- end }}
         {{- if .Values.updates.reload }}
         checksum/configuration: {{ include "mitis.service.configuration" . | sha256sum }}
         {{- end }}
@@ -86,5 +90,26 @@ spec:
   {{- end }}
   surgeReplicas: 1
   readinessDeadlineSeconds: {{ include "mitis.service.seconds" (.Values.disruption.maxWait | default "10m") }}
+{{- end }}
+{{- if .Values.availability }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "mitis.service.labels" . | nindent 4 }}
+  annotations:
+    {{- include "mitis.service.wave" (dict "root" . "wave" 0) | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels:
+      {{- if include "mitis.service.meshCanary" . }}
+      app: {{ $name }}-primary
+      {{- else }}
+      {{- include "mitis.service.selector" . | nindent 6 }}
+      {{- end }}
 {{- end }}
 {{- end }}

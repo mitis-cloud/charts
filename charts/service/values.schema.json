@@ -12,6 +12,11 @@
     "workingDirectory": {"$ref": "#/definitions/path"},
     "capacity": {"$ref": "#/definitions/capacity"},
     "availability": {"type": "object", "additionalProperties": false, "required": ["zones"], "properties": {"zones": {"type": "integer", "minimum": 2, "description": "Strict eligible-zone spread; no automatic relaxation during zone loss."}}},
+    "mesh": {"type": "boolean", "description": "Join the service mesh. With canary strategy, the mesh shifts traffic instead of a Gateway."},
+    "telemetry": {"type": "object", "additionalProperties": false, "required": ["environment"], "properties": {
+      "environment": {"type": "string", "minLength": 1, "description": "Deployment environment reported with the service's telemetry."},
+      "service": {"type": "string", "minLength": 1, "description": "Reported service name; defaults to the service identity."}
+    }, "description": "Send OpenTelemetry data to the collector on the instance's node."},
     "ports": {"$ref": "#/definitions/ports"},
     "http": {"$ref": "#/definitions/http"},
     "response": {"type": "object", "additionalProperties": false, "required": ["status", "body"], "properties": {
@@ -45,6 +50,11 @@
         "reload": {"type": "boolean", "description": "Replace instances when declared configuration or synchronized Secrets change."},
         "reloadSecrets": {"type": "boolean", "description": "With reload enabled, also react to synchronized Secret changes. Disable explicitly to preserve configuration-only replacement."},
         "restart": {"type": "string", "description": "Explicit rollout token supplied by the deployment operation; no render-time clock."},
+        "canary": {"type": "object", "additionalProperties": false, "minProperties": 1, "properties": {
+          "maxErrorRate": {"type": "string", "pattern": "^[0-9]+([.][0-9]+)?%$", "description": "Roll back above this error rate."},
+          "maxLatency": {"type": "string", "pattern": "^[1-9][0-9]*ms$", "description": "Roll back above this request duration."},
+          "testPath": {"$ref": "#/definitions/path", "description": "Path that receives generated traffic during analysis."}
+        }, "description": "Checks for a mesh canary. Omit to promote without analysis."},
         "smoke": {"allOf": [{"$ref": "#/definitions/job"}, {"required": ["command", "timeout", "capacity"], "not": {"anyOf": [{"required": ["run"]}, {"required": ["schedule"]}, {"required": ["order"]}, {"required": ["suspend"]}, {"required": ["name"]}]}}]}
       }
     },

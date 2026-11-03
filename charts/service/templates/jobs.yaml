@@ -8,7 +8,7 @@
 {{ include "mitis.service.job" (dict "root" $root "job" $job "key" $key "id" (printf "job-%s" $key)) }}
 {{- end -}}
 {{- end -}}
-{{- if and (eq .Values.updates.strategy "canary") (has .Values.render.part (list "all" "runtime" "application")) -}}
+{{- if and (include "mitis.service.rollout" .) (has .Values.render.part (list "all" "runtime" "application")) -}}
 {{- $name := include "mitis.service.name" . -}}
 {{- $smoke := deepCopy .Values.updates.smoke -}}
 {{- $_ := set $smoke "run" "after-ready" -}}
