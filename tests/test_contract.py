@@ -696,6 +696,8 @@ class ServiceContract(unittest.TestCase):
         canary = resource(docs, "Canary")["spec"]
         self.assertFalse(canary["skipAnalysis"])
         self.assertEqual(8000, canary["service"]["port"])
+        self.assertEqual(8000, canary["service"]["targetPort"])
+        self.assertEqual(8000, resource(docs, "Service")["spec"]["ports"][0]["targetPort"])
         self.assertEqual("5xx", canary["service"]["apex"]["annotations"]["retry.linkerd.io/http"])
         self.assertEqual(
             [("linkerd-http-success-rate", {"min": 99}), ("linkerd-http-request-duration", {"max": 500})],

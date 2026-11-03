@@ -4,6 +4,8 @@
 {{- $grpc := hasKey .Values.ports "grpc" -}}
 {{- $portName := ternary "grpc" "http" $grpc -}}
 {{- $port := index .Values.ports $portName -}}
+{{- $target := $port -}}
+{{- if kindIs "map" $port -}}{{ $target = $port.target }}{{- end -}}
 {{- $listen := $port -}}
 {{- if kindIs "map" $port -}}{{ $listen = $port.listen }}{{- else if eq $portName "http" -}}{{ $listen = 80 }}{{- end -}}
 {{- $checks := .Values.updates.canary | default dict -}}
@@ -34,7 +36,7 @@ spec:
   service:
     port: {{ $listen }}
     portName: {{ $portName }}
-    targetPort: {{ $portName }}
+    targetPort: {{ $target }}
     {{- if $grpc }}
     appProtocol: kubernetes.io/h2c
     {{- end }}
