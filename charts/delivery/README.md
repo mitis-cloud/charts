@@ -52,8 +52,6 @@ Optional `syncWindows` lists when an environment may sync, each with a cron `sch
 
 A service's optional `layers` lists repository-relative values files for that service alone, applied after the environment's `defaults.yaml` and before its own environment file. `{environment}` in a path becomes the environment's name, for example `projects/shop/environments/{environment}/backend.yaml`. Use them for what the processes of one application share when an environment runs several applications.
 
-A service's optional `delegatedSelectors` lists Services whose selectors a canary controller rewrites, so Argo ignores those selectors.
-
 Every environment selects its services explicitly:
 
 ```yaml

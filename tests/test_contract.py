@@ -842,19 +842,6 @@ class DeliveryContract(unittest.TestCase):
         )
         self.assertIn("defaults.yaml", files[-4])
 
-    def test_delegated_selectors_are_scoped_to_named_services(self):
-        values = yaml.safe_load(self.example.read_text())
-        values["releaseUnits"]["worker"]["services"]["worker"]["delegatedSelectors"] = ["worker"]
-        docs = render(self.chart, values)
-        rules = [
-            r for r in self.expanded_spec(docs, "worker", "test")["ignoreDifferences"]
-            if r.get("jsonPointers") == ["/spec/selector"]
-        ]
-        self.assertEqual(
-            [{"group": "", "kind": "Service", "name": "worker", "namespace": "example-test", "jsonPointers": ["/spec/selector"]}],
-            rules,
-        )
-
     def test_one_warehouse_per_unit_and_one_stage_per_environment(self):
         docs = render(self.chart, self.example)
         warehouses = {d["metadata"]["name"]: d["spec"] for d in docs if d["kind"] == "Warehouse"}
