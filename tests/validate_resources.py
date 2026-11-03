@@ -63,7 +63,11 @@ def merge_patch(target, patch):
         return copy.deepcopy(patch)
     result = copy.deepcopy(target)
     for key, value in patch.items():
-        result[key] = merge_patch(result.get(key), value) if key in result else copy.deepcopy(value)
+        result[key] = (
+            merge_patch(result.get(key), value)
+            if key in result
+            else copy.deepcopy(value)
+        )
     return result
 
 
@@ -123,7 +127,7 @@ def main():
     native = []
     applications = []
     count = 0
-    for chart in ["service", "delivery", "webapp"]:
+    for chart in ["service", "delivery"]:
         for example in sorted((ROOT / "examples" / chart).glob("*.yaml")):
             for doc in render(ROOT / "charts" / chart, example):
                 key = (doc["apiVersion"], doc["kind"])

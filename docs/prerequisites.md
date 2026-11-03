@@ -20,7 +20,7 @@ Read this page before your first deployment. The [integration guide](integration
 
 Rules that follow from this:
 
-- **Ownership follows lifecycle.** Environment composites manage environment-owned databases, generated values, static sites, object storage and workload identities. Shared clusters, filesystems, DNS zones, secret backends and resources with external consumers remain with the platform's infrastructure owner.
+- **Ownership follows lifecycle.** Environment composites manage environment-owned databases, generated values, object storage and workload identities. Shared clusters, filesystems, DNS zones, secret backends and resources with external consumers remain with the platform's infrastructure owner.
 - **No controller lifecycle.** The charts have no Helm dependencies on any controller chart. They don't install, configure or upgrade controllers or CRDs, even when a feature needs one.
 - **Namespace-scoped by design.** The service chart renders no cluster-scoped objects; its permissions are namespace-scoped. The delivery chart's Kargo `Project` and the environment chart's `Environment` are the only cluster-scoped objects the charts render. Cluster-wide grants, IngressClasses, storage classes and secret stores belong to the platform.
 - **Existing names are references.** Values such as `secretStore`, `sharedStorage`, `placement`, `account` and the ingress class naming convention point at objects that must already exist. A wrong name renders fine and fails at runtime.

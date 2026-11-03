@@ -9,7 +9,7 @@ An environment is one application namespace and everything its services share: t
 
 | Field | Meaning |
 | --- | --- |
-| `namespace` | Required. The application namespace, which the environment owns and is named after. It cannot change. |
+| `namespace` | The application namespace, which the environment owns and is named after. Empty uses the Helm release namespace. It cannot change. |
 | `exposures` | Profiles services may select: `public`, `private`, or both (default). |
 | `isolation.enabled` | Restrict outbound traffic to the namespace itself, cluster DNS, the internet and `isolation.privatePorts` on platform private networks. Link-local addresses, such as instance metadata, are blocked. Inbound traffic is not restricted. |
 | `isolation.privatePorts` | TCP ports reachable on platform private networks, such as a database port. |
@@ -19,18 +19,19 @@ An environment is one application namespace and everything its services share: t
 
 | `secrets.store`, `secrets.prefix` | The ClusterSecretStore holding the environment's values and their remote key prefix. Required with `databases`. |
 | `secrets.generated` | Values by remote key suffix: `password` (default 32 characters with symbols), `string` (letters and digits, `length` required), `username` (lowercase letters), `manual` (a `-` placeholder a person replaces) or `value` (fixed content). Each is generated and published only when its remote key does not exist, so existing values are kept. |
-| `webapps.<name>` | A static site at `hostname` (inside a platform DNS zone). `mode: application` (default) routes non-file paths to the single-page application and caches only `cachedPaths` (default `/assets/*`); `mode: files` serves stored files as they are, all cached, and ignores maintenance. `mode: origin` instead fronts an existing HTTPS `origin.hostname`, sending the value in `origin.secretRef` (a Secret in the namespace) as the `X-CloudFront-Secret` header; the origin must reject requests without it. It caches everything, ignores maintenance and has no bucket, outputs or publisher. Stored sites follow the environment's maintenance switch and body, and publishes its bucket and CDN identifiers as `<prefix><name>-website-bucket-id` and `<prefix><name>-cloudfront-website-id` for upload tooling. The `<name>-outputs` Secret holds the same `bucket` and `distribution` in the namespace, and the `<name>-publisher` service account may upload to the bucket, invalidate the distribution and read the platform's `artifacts.repositories`, nothing else. The [webapp chart](../webapp/README.md) publishes builds with it. Requires `secrets`. |
 | `databases.<key>` | A PostgreSQL database on the platform's shared instance. Its physical `name` defaults to `<namespace>-<key>` and can preserve an existing name. Configure `extensions`, `schemas` (per schema `operator` and `reader` access: `full`, `read`, `read-execute` or `none`; the admin group owns what it creates) and `accounts` (name to `admin`, `operator` or `reader` group). |
 | `objectStorage.<key>` | A private bucket with a stable `name`, encryption, `versioning` (default true), optional `expireAfterDays` for current objects, and optional `tags`. Nonempty buckets are never force-deleted. |
 | `identities.<key>` | Cloud access for the listed `serviceAccounts`. `storage` grants select a local ObjectStorage by `name`, with `access: read` or `readWrite`; `external: true` selects a platform-owned storage catalog entry. `listStorage` permits account-wide bucket discovery. `allowNodeAssumption` permits the cluster's configured workers to assume this identity. Both permissions default false. |
 
 See [the example](../../examples/environment/values.yaml) and [values.schema.json](values.schema.json).
 
+Version 0.8 removes web application provisioning from this chart and the platform package. Transfer existing composites and their composed resources to their new owner before upgrading; removing their definitions or composition references first can delete live resources. Publishing charts are registered explicitly with the delivery chart rather than supplied as a built-in default.
+
 Removing the release or its Argo CD Application leaves the `Environment` in place: deleting it deletes the namespace and every service in it. Delete the `Environment` itself only to retire the environment.
 
 ## Platform package
 
-`ghcr.io/mitis-cloud/platform` is a Crossplane Configuration with the `Environment` definition and its provider compositions. It depends on `function-environment-configs`, `function-go-templating`, `function-auto-ready`, `provider-sql` and the AWS S3, CloudFront, ACM, Route53, IAM and EKS providers. The platform then supplies:
+`ghcr.io/mitis-cloud/platform` is a Crossplane Configuration with the `Environment` definition and its provider compositions. It depends on `function-environment-configs`, `function-go-templating`, `function-auto-ready`, `provider-sql` and the AWS S3 and IAM providers. The platform then supplies:
 
 - An `EnvironmentConfig` named `mitis-platform` with the cluster's provider facts. For AWS:
 
@@ -56,9 +57,7 @@ Removing the release or its Argo CD Application leaves the `Environment` in plac
           group: guarded-alb
           wafAclArn: arn:aws:wafv2:...
     privateNetworks: [198.51.100.0/24]
-    region: eu-west-1                 # needed for webapps
-    cluster:
-      name: example-cluster           # EKS cluster, for webapp publisher identities
+    region: eu-west-1                 # object storage region
     identity:                         # needed for workload identities using IRSA
       oidcProvider: arn:aws:iam::000000000000:oidc-provider/oidc.eks.eu-west-1.amazonaws.com/id/EXAMPLE
       oidcIssuer: oidc.eks.eu-west-1.amazonaws.com/id/EXAMPLE
@@ -69,12 +68,6 @@ Removing the release or its Argo CD Application leaves the `Environment` in plac
     objectStorage:                    # shared buckets remain with their existing owner
       shared-input:
         id: arn:aws:s3:::shared-input
-    artifacts:
-      repositories:                   # optional: ECR repositories publishers may read builds from
-        - arn:aws:ecr:eu-west-1:000000000000:repository/portal-*
-    dns:
-      zones:                          # public zones webapp hostnames live in, by domain
-        example.invalid: Z0000000000EXAMPLE
     postgres:                         # shared PostgreSQL instance, needed for databases
       providerConfig: postgres        # provider-sql ClusterProviderConfig with superuser access
       adminRole: postgres             # the role that provider-sql connects as
@@ -110,7 +103,6 @@ Removing the release or its Argo CD Application leaves the `Environment` in plac
   ```
 
 - For databases, a provider-sql `ClusterProviderConfig` with superuser access to the instance, and a secret store that External Secrets can write (PushSecret).
-- For webapps on AWS, the S3, CloudFront, ACM, Route53, IAM and EKS providers with a `default` `ClusterProviderConfig` allowed to manage buckets, distributions, functions, certificates and records in those zones, `<namespace>-<webapp>-publisher` roles (including passing them to EKS) and the cluster's Pod Identity associations.
 - For object storage and workload identities, the S3 and IAM providers with permission to manage the selected buckets, roles, policies and attachments. Node assumption additionally requires managing an inline policy on the configured worker role. Source the identity and external-storage facts from the infrastructure that owns them.
 
 The package declares every function and provider it can use. A platform may install it with `skipDependencyResolution` and install only what its clusters need.
@@ -127,7 +119,6 @@ Crossplane takes over an existing object only when it already carries the annota
 | --- | --- |
 | Namespace `<namespace>` | `namespace` |
 | IngressClassParams and IngressClass `<namespace>-<exposure>` | `<exposure>-parameters` and `<exposure>-class` |
-| A webapp's buckets, identity, function, certificate, distribution and records | Pre-create each managed resource with its external name, the `<webapp>-<id>` name the composition uses, and `crossplane.io/composition-resource-name: <id>` |
 
 Databases, roles and grants are adopted by name with no annotation: existing passwords stay, because they are read from the existing remote keys. Then stop the previous owner from managing them without deleting them.
 

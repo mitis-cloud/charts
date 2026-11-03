@@ -40,7 +40,7 @@ Each environment requires:
 
 Optional `layers` lists repository-relative values files, such as `stages/test.yaml`, that every service in the environment receives after its definition and before the environment's own files, in order. Use them for values shared by several environments.
 
-Optional `environment` holds [environment chart](../environment/README.md) values: exposures, isolation and the maintenance switch. The chart then renders an Argo CD Application for the environment, synchronized automatically because it is configuration rather than a promoted release, and the environment needs a `charts.environment` pin. Its namespace is the environment's `namespace`. The AppProject then also permits the cluster-scoped `Environment`.
+Optional `environment` holds [environment chart](../environment/README.md) values: exposures, isolation and the maintenance switch. The chart then renders an Argo CD Application for the environment, synchronized automatically because it is configuration rather than a promoted release. `environmentChart` selects its chart registry key (default `environment`); the environment must pin that key under `charts`. This lets environments select an adopter-owned assembly independently. Its namespace is the environment's `namespace`. The AppProject also permits the cluster-scoped `Environment`.
 
 Optional `clusterResources` lists additional `{group, kind}` pairs allowed in that environment's AppProject, for example the CRDs and cluster RBAC required by an operator chart. These are explicit grants; wildcards are rejected and other environments retain their own allowlists.
 

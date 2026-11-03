@@ -24,6 +24,3 @@ databases:
     accounts:
       migrator: admin
       api: operator
-webapps:
-  portal:
-    hostname: portal.app.example.invalid

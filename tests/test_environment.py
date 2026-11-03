@@ -4,11 +4,9 @@ import subprocess
 import tempfile
 import unittest
 
-import jsonschema
 import yaml
 
 from test_contract import ROOT, documents, render, resource
-from validate_resources import CACHE, download, strict_schema
 
 
 CROSSPLANE = ROOT / "crossplane"
@@ -21,9 +19,13 @@ def compose(xr, composition):
         path.write_text(yaml.safe_dump(xr))
         result = subprocess.run(
             [
-                "crossplane", "render", str(path), str(composition),
+                "crossplane",
+                "render",
+                str(path),
+                str(composition),
                 str(FIXTURES / "functions.yaml"),
-                "--required-resources", str(FIXTURES / "platform-aws.yaml"),
+                "--required-resources",
+                str(FIXTURES / "platform-aws.yaml"),
             ],
             text=True,
             capture_output=True,
@@ -36,6 +38,14 @@ def compose(xr, composition):
 class EnvironmentContract(unittest.TestCase):
     chart = ROOT / "charts/environment"
     example = ROOT / "examples/environment/values.yaml"
+
+    def test_release_namespace_is_the_default(self):
+        xr = resource(render(self.chart), "Environment")
+        self.assertEqual(xr["metadata"]["name"], "example")
+        self.assertEqual(xr["spec"]["namespace"], "example")
+
+    def test_unknown_capabilities_are_rejected(self):
+        render(self.chart, self.example, {"webapps": {}}, success=False)
 
     def test_package_and_lint(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -57,13 +67,20 @@ class EnvironmentContract(unittest.TestCase):
     def test_environment_outlives_its_release(self):
         xr = resource(render(self.chart, self.example), "Environment")
         self.assertEqual(xr["metadata"]["name"], "example")
-        self.assertEqual(xr["metadata"]["annotations"]["helm.sh/resource-policy"], "keep")
         self.assertEqual(
-            xr["metadata"]["annotations"]["argocd.argoproj.io/sync-options"], "Delete=false"
+            xr["metadata"]["annotations"]["helm.sh/resource-policy"], "keep"
+        )
+        self.assertEqual(
+            xr["metadata"]["annotations"]["argocd.argoproj.io/sync-options"],
+            "Delete=false",
         )
 
     def test_maintenance_needs_hostnames_and_public_exposure(self):
-        render(self.chart, {"namespace": "example", "maintenance": {"enabled": True}}, success=False)
+        render(
+            self.chart,
+            {"namespace": "example", "maintenance": {"enabled": True}},
+            success=False,
+        )
         render(
             self.chart,
             {
@@ -80,13 +97,19 @@ class AwsEnvironmentComposition(unittest.TestCase):
     composition = CROSSPLANE / "environment/aws.yaml"
 
     def composed(self, *values):
-        xr = resource(render(self.chart, ROOT / "examples/environment/values.yaml", *values), "Environment")
+        xr = resource(
+            render(self.chart, ROOT / "examples/environment/values.yaml", *values),
+            "Environment",
+        )
         return compose(xr, self.composition)
 
     def test_exposure_classes_follow_the_service_contract(self):
         docs = self.composed()
         self.assertEqual(resource(docs, "Namespace")["metadata"]["name"], "example")
-        for exposure, group in [("public", "example-alb"), ("private", "example-alb-private")]:
+        for exposure, group in [
+            ("public", "example-alb"),
+            ("private", "example-alb-private"),
+        ]:
             params = resource(docs, "IngressClassParams", f"example-{exposure}")
             self.assertEqual(params["spec"]["group"]["name"], group)
             self.assertNotIn("certificateArn", params["spec"])
@@ -95,13 +118,19 @@ class AwsEnvironmentComposition(unittest.TestCase):
                 {"kubernetes.io/metadata.name": "example"},
             )
             ingress_class = resource(docs, "IngressClass", f"example-{exposure}")
-            self.assertEqual(ingress_class["spec"]["parameters"]["name"], f"example-{exposure}")
+            self.assertEqual(
+                ingress_class["spec"]["parameters"]["name"], f"example-{exposure}"
+            )
         self.assertEqual(
-            resource(docs, "IngressClassParams", "example-private")["spec"]["inboundCIDRs"],
+            resource(docs, "IngressClassParams", "example-private")["spec"][
+                "inboundCIDRs"
+            ],
             ["192.0.2.0/24"],
         )
         self.assertEqual(
-            resource(docs, "IngressClassParams", "example-public")["spec"]["loadBalancerAttributes"],
+            resource(docs, "IngressClassParams", "example-public")["spec"][
+                "loadBalancerAttributes"
+            ],
             [{"key": "routing.http.xff_header_processing.mode", "value": "remove"}],
         )
 
@@ -114,11 +143,16 @@ class AwsEnvironmentComposition(unittest.TestCase):
         private = resource(docs, "IngressClassParams", "guarded-private")["spec"]
         self.assertEqual(public["group"]["name"], "guarded-alb")
         self.assertTrue(public["wafv2AclArn"].startswith("arn:aws:wafv2:"))
-        self.assertEqual(public["loadBalancerAttributes"], [{"key": "routing.http.xff_header_processing.mode", "value": "remove"}])
+        self.assertEqual(
+            public["loadBalancerAttributes"],
+            [{"key": "routing.http.xff_header_processing.mode", "value": "remove"}],
+        )
         self.assertEqual(private["group"]["name"], "guarded-alb-private")
         self.assertEqual(private["inboundCIDRs"], ["192.0.2.0/24"])
         self.assertNotIn("wafv2AclArn", private)
-        example = resource(self.composed(), "IngressClassParams", "example-public")["spec"]
+        example = resource(self.composed(), "IngressClassParams", "example-public")[
+            "spec"
+        ]
         self.assertNotIn("wafv2AclArn", example)
 
     def test_isolation_allows_only_declared_private_ports(self):
@@ -137,48 +171,49 @@ class AwsEnvironmentComposition(unittest.TestCase):
         self.assertFalse([d for d in self.composed() if d["kind"] == "Ingress"])
         ingress = resource(self.composed({"maintenance": {"enabled": True}}), "Ingress")
         self.assertEqual(ingress["spec"]["ingressClassName"], "example-public")
-        self.assertEqual([r["host"] for r in ingress["spec"]["rules"]], ["api.example.invalid"])
-        action = json.loads(ingress["metadata"]["annotations"]["alb.ingress.kubernetes.io/actions.maintenance"])
+        self.assertEqual(
+            [r["host"] for r in ingress["spec"]["rules"]], ["api.example.invalid"]
+        )
+        action = json.loads(
+            ingress["metadata"]["annotations"][
+                "alb.ingress.kubernetes.io/actions.maintenance"
+            ]
+        )
         self.assertEqual(action["FixedResponseConfig"]["StatusCode"], "503")
-        self.assertEqual(action["FixedResponseConfig"]["MessageBody"], "<p>Back soon.</p>")
-        self.assertNotIn("external-dns.alpha.kubernetes.io/hostname", ingress["metadata"]["annotations"])
+        self.assertEqual(
+            action["FixedResponseConfig"]["MessageBody"], "<p>Back soon.</p>"
+        )
+        self.assertNotIn(
+            "external-dns.alpha.kubernetes.io/hostname",
+            ingress["metadata"]["annotations"],
+        )
 
     def test_databases_and_generated_values_keep_existing_remote_values(self):
         docs = self.composed()
         database = resource(docs, "Database", "backend")
         self.assertEqual(database["metadata"]["namespace"], "example")
         self.assertEqual(database["spec"]["name"], "example-backend")
-        self.assertEqual(database["spec"]["secrets"], {"store": "aws-ssm", "key": "example-pgsql-backend"})
+        self.assertEqual(
+            database["spec"]["secrets"],
+            {"store": "aws-ssm", "key": "example-pgsql-backend"},
+        )
         pushes = {d["metadata"]["name"]: d for d in docs if d["kind"] == "PushSecret"}
         for key in ["nats-password", "mcp-api-key", "nats-username", "openai-api-key"]:
             push = pushes[f"generated-{key}"]
             self.assertEqual(push["spec"]["updatePolicy"], "IfNotExists")
-            self.assertEqual(push["spec"]["data"][0]["match"]["remoteRef"]["remoteKey"], f"example-{key}")
-        generators = {d["metadata"]["name"]: d["spec"] for d in docs if d["kind"] == "Password"}
+            self.assertEqual(
+                push["spec"]["data"][0]["match"]["remoteRef"]["remoteKey"],
+                f"example-{key}",
+            )
+        generators = {
+            d["metadata"]["name"]: d["spec"] for d in docs if d["kind"] == "Password"
+        }
         self.assertEqual(generators["generated-mcp-api-key"]["symbols"], 0)
         self.assertEqual(generators["generated-mcp-api-key"]["length"], 32)
         self.assertTrue(generators["generated-nats-username"]["noUpper"])
         self.assertIn("symbolCharacters", generators["generated-nats-password"])
         manual = resource(docs, "Secret", "generated-openai-api-key")
         self.assertEqual(manual["stringData"], {"value": "-"})
-
-    def test_webapps_follow_the_environment_maintenance_switch(self):
-        webapp = resource(self.composed({"maintenance": {"enabled": True}}), "Webapp", "portal")
-        self.assertEqual(webapp["spec"]["hostname"], "portal.app.example.invalid")
-        self.assertTrue(webapp["spec"]["maintenance"]["enabled"])
-        self.assertEqual(webapp["spec"]["maintenance"]["body"], "<p>Back soon.</p>")
-        self.assertEqual(webapp["spec"]["outputs"], {"store": "aws-ssm", "key": "example-portal"})
-
-    def test_origin_webapps_pass_their_origin(self):
-        origin = {"hostname": "assets-origin.app.example.invalid", "secretRef": {"name": "nginx-assets", "key": "origin-secret"}}
-        docs = self.composed({"webapps": {"assets": {"hostname": "assets.app.example.invalid", "mode": "origin", "origin": origin}}})
-        webapp = resource(docs, "Webapp", "assets")
-        self.assertEqual((webapp["spec"]["mode"], webapp["spec"]["origin"]), ("origin", origin))
-
-    def test_only_origin_webapps_take_an_origin(self):
-        origin = {"hostname": "assets-origin.app.example.invalid", "secretRef": {"name": "nginx-assets", "key": "origin-secret"}}
-        render(self.chart, ROOT / "examples/environment/values.yaml", {"webapps": {"assets": {"hostname": "a.example.invalid", "mode": "origin"}}}, success=False)
-        render(self.chart, ROOT / "examples/environment/values.yaml", {"webapps": {"assets": {"hostname": "a.example.invalid", "origin": origin}}}, success=False)
 
     def test_database_physical_name_is_independent_of_its_environment_key(self):
         docs = self.composed({"databases": {"backend": {"name": "legacy_analytics"}}})
@@ -191,15 +226,19 @@ class AwsEnvironmentComposition(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             subprocess.run(
                 [
-                    "crossplane", "xpkg", "build",
-                    "--package-root", str(CROSSPLANE),
-                    "--examples-root", str(ROOT / "examples/crossplane"),
-                    "-o", str(Path(directory) / "platform.xpkg"),
+                    "crossplane",
+                    "xpkg",
+                    "build",
+                    "--package-root",
+                    str(CROSSPLANE),
+                    "--examples-root",
+                    str(ROOT / "examples/crossplane"),
+                    "-o",
+                    str(Path(directory) / "platform.xpkg"),
                 ],
                 check=True,
                 capture_output=True,
             )
-
 
 
 class PostgresDatabaseComposition(unittest.TestCase):
@@ -222,32 +261,60 @@ class PostgresDatabaseComposition(unittest.TestCase):
     def test_groups_accounts_and_ownership(self):
         docs = self.by_name(self.composed())
         migrator = docs["example-backend-account-migrator"]["spec"]["forProvider"]
-        self.assertEqual(migrator["configurationParameters"], [{"name": "role", "value": "example-backend-group-admin"}])
+        self.assertEqual(
+            migrator["configurationParameters"],
+            [{"name": "role", "value": "example-backend-group-admin"}],
+        )
         api = docs["example-backend-account-api"]["spec"]["forProvider"]
         self.assertNotIn("configurationParameters", api)
-        self.assertEqual(api["passwordSecretRef"], {"name": "example-backend-api", "key": "password"})
         self.assertEqual(
-            docs["example-backend-account-api-membership"]["spec"]["forProvider"]["memberOf"],
+            api["passwordSecretRef"], {"name": "example-backend-api", "key": "password"}
+        )
+        self.assertEqual(
+            docs["example-backend-account-api-membership"]["spec"]["forProvider"][
+                "memberOf"
+            ],
             "example-backend-group-operator",
         )
-        self.assertEqual(docs["example-backend-database"]["spec"]["forProvider"]["owner"], "example-backend-group-admin")
-        self.assertTrue(docs["example-backend-database-admin"]["spec"]["forProvider"]["revokePublicOnDb"])
-        self.assertNotIn("MAINTAIN", docs["example-backend-public-admin-table"]["spec"]["forProvider"]["privileges"])
-        self.assertEqual(docs["example-backend-reporting-operator-table"]["spec"]["forProvider"]["privileges"], ["SELECT"])
+        self.assertEqual(
+            docs["example-backend-database"]["spec"]["forProvider"]["owner"],
+            "example-backend-group-admin",
+        )
+        self.assertTrue(
+            docs["example-backend-database-admin"]["spec"]["forProvider"][
+                "revokePublicOnDb"
+            ]
+        )
+        self.assertNotIn(
+            "MAINTAIN",
+            docs["example-backend-public-admin-table"]["spec"]["forProvider"][
+                "privileges"
+            ],
+        )
+        self.assertEqual(
+            docs["example-backend-reporting-operator-table"]["spec"]["forProvider"][
+                "privileges"
+            ],
+            ["SELECT"],
+        )
         self.assertNotIn("example-backend-reporting-operator-function", docs)
         targets = {
             d["spec"]["forProvider"]["targetRole"]
             for d in docs.values()
             if d["kind"] == "DefaultPrivileges"
         }
-        self.assertEqual(targets, {"example-backend-group-admin", "example-backend-migrator"})
+        self.assertEqual(
+            targets, {"example-backend-group-admin", "example-backend-migrator"}
+        )
         self.assertNotIn("example-backend-schema-public", docs)
         self.assertEqual(
             docs["example-backend-provider-membership"]["spec"]["forProvider"],
             {"role": "platform_admin", "memberOf": "example-backend-group-admin"},
         )
         self.assertEqual(
-            docs["example-backend-provider-membership-migrator"]["spec"]["forProvider"]["memberOf"],
+            docs["example-backend-provider-membership-migrator"]["spec"]["forProvider"][
+                "memberOf"
+            ],
             "example-backend-migrator",
         )
         self.assertNotIn("example-backend-provider-membership-api", docs)
@@ -261,166 +328,56 @@ class PostgresDatabaseComposition(unittest.TestCase):
             self.assertEqual(push["spec"]["updatePolicy"], "IfNotExists")
             keys = [d["match"]["remoteRef"]["remoteKey"] for d in push["spec"]["data"]]
             account = push["metadata"]["name"].removeprefix("example-backend-")
-            self.assertEqual(keys, [f"example-pgsql-backend-{account}-password", f"example-pgsql-backend-{account}-url"])
-        generated = [d for d in docs.values() if d["kind"] == "ExternalSecret" and d["metadata"]["name"].endswith("-generated")]
-        self.assertTrue(all(d["spec"]["refreshPolicy"] == "CreatedOnce" for d in generated))
+            self.assertEqual(
+                keys,
+                [
+                    f"example-pgsql-backend-{account}-password",
+                    f"example-pgsql-backend-{account}-url",
+                ],
+            )
+        generated = [
+            d
+            for d in docs.values()
+            if d["kind"] == "ExternalSecret"
+            and d["metadata"]["name"].endswith("-generated")
+        ]
+        self.assertTrue(
+            all(d["spec"]["refreshPolicy"] == "CreatedOnce" for d in generated)
+        )
 
     def test_sql_identifiers_are_preserved_with_valid_kubernetes_names(self):
         resources = self.composed(name="legacy_analytics")
         docs = self.by_name(resources)
         for doc in resources:
-            self.assertRegex(doc["metadata"]["name"], r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
-        database = docs["legacy-analytics-database"]
-        self.assertEqual(database["metadata"]["annotations"]["crossplane.io/external-name"], "legacy_analytics")
-        self.assertEqual(database["spec"]["forProvider"]["owner"], "legacy_analytics-group-admin")
-        account = docs["legacy-analytics-account-api"]
-        self.assertEqual(account["metadata"]["annotations"]["crossplane.io/external-name"], "legacy_analytics-api")
-        self.assertEqual(account["spec"]["forProvider"]["passwordSecretRef"], {"name": "legacy-analytics-api", "key": "password"})
-        credentials = resource(resources, "ExternalSecret", "legacy-analytics-api")
-        self.assertEqual(credentials["spec"]["target"]["template"]["data"]["username"], "legacy_analytics-api")
-        self.assertEqual(credentials["spec"]["data"][0]["remoteRef"]["key"], "example-pgsql-backend-api-password")
-
-
-
-class AwsWebappComposition(unittest.TestCase):
-    composition = CROSSPLANE / "webapp/aws.yaml"
-
-    def composed(self, observed=None):
-        xr = yaml.safe_load((ROOT / "examples/crossplane/webapp.yaml").read_text())
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "xr.yaml"
-            path.write_text(yaml.safe_dump(xr))
-            command = [
-                "crossplane", "render", str(path), str(self.composition), str(FIXTURES / "functions.yaml"),
-                "--required-resources", str(FIXTURES / "platform-aws.yaml"),
-            ]
-            if observed:
-                command += ["--observed-resources", str(FIXTURES / observed)]
-            result = subprocess.run(command, text=True, capture_output=True)
-            if result.returncode:
-                raise AssertionError(result.stderr)
-            return {
-                d["metadata"]["annotations"]["crossplane.io/composition-resource-name"]: d
-                for d in documents(result.stdout)[1:]
-            }
-
-    def test_dependent_resources_wait_for_their_inputs(self):
-        first = self.composed()
-        for waiting in ["distribution", "website-policy", "validation", "record-a", "outputs-publish"]:
-            self.assertNotIn(waiting, first)
-        self.assertEqual(first["website-bucket"]["metadata"]["annotations"]["crossplane.io/external-name"], "portal.app.example.invalid")
-        self.assertEqual(first["logs-bucket"]["metadata"]["annotations"]["crossplane.io/external-name"], "example-portal-logs")
-        self.assertEqual(first["certificate"]["spec"]["forProvider"]["region"], "us-east-1")
-        self.assertEqual(first["certificate"]["spec"]["forProvider"]["domainName"], "*.portal.app.example.invalid")
-
-    def test_adopted_names_are_kept_and_the_distribution_is_wired(self):
-        docs = self.composed("webapp-observed.yaml")
-        self.assertEqual(docs["logs-bucket"]["metadata"]["annotations"]["crossplane.io/external-name"], "legacy-portal-logs-abc123")
-        self.assertEqual(docs["function"]["metadata"]["annotations"]["crossplane.io/external-name"], "legacy-portal-function")
-        distribution = docs["distribution"]["spec"]["forProvider"]
-        self.assertEqual(docs["distribution"]["metadata"]["annotations"]["crossplane.io/external-name"], "E1EXAMPLEDIST")
-        self.assertEqual(distribution["origin"][0]["s3OriginConfig"]["originAccessIdentity"], "origin-access-identity/cloudfront/E2EXAMPLEOAI")
-        self.assertEqual(distribution["origin"][0]["domainName"], "portal.app.example.invalid.s3.eu-west-1.amazonaws.com")
-        self.assertEqual(distribution["loggingConfig"]["bucket"], "legacy-portal-logs-abc123.s3.amazonaws.com")
-        self.assertEqual([b["pathPattern"] for b in distribution["orderedCacheBehavior"]], ["/assets/*"])
-        self.assertEqual(distribution["defaultCacheBehavior"]["functionAssociation"][0]["functionArn"], "arn:aws:cloudfront::000000000000:function/legacy-portal-function")
-        self.assertEqual(distribution["defaultCacheBehavior"]["responseHeadersPolicyId"], "60669652-455b-4ae9-85a4-c4c02393f86c")
-        self.assertEqual(docs["record-a"]["spec"]["forProvider"]["zoneId"], "Z0000000000NESTED")
-        self.assertEqual(docs["validation"]["spec"]["forProvider"]["name"], "_abc.portal.app.example.invalid")
-        code = docs["function-code"]["stringData"]["code"]
-        self.assertIn("var maintenanceEnabled = false;", code)
-        self.assertTrue(code.startswith("function handler(event) {"))
-        # A code change is a spec change, so the provider applies it at once.
-        self.assertTrue(docs["function"]["spec"]["forProvider"]["comment"].startswith("code "))
-
-    def test_publisher_may_only_upload_and_invalidate_its_own_site(self):
-        first = self.composed()
-        self.assertNotIn("publisher-policy", first)
-        docs = self.composed("webapp-observed.yaml")
-        self.assertEqual(docs["publisher-account"]["metadata"]["name"], "portal-publisher")
-        self.assertEqual(docs["publisher-role"]["metadata"]["annotations"]["crossplane.io/external-name"], "example-portal-publisher")
-        trust = json.loads(docs["publisher-role"]["spec"]["forProvider"]["assumeRolePolicy"])["Statement"][0]
-        self.assertEqual(trust["Principal"], {"Service": "pods.eks.amazonaws.com"})
-        policy = json.loads(docs["publisher-policy"]["spec"]["forProvider"]["policy"])["Statement"]
-        self.assertEqual(
-            [s["Resource"] for s in policy],
-            ["arn:aws:s3:::portal.app.example.invalid", "arn:aws:s3:::portal.app.example.invalid/*", "arn:aws:cloudfront::000000000000:distribution/E1EXAMPLEDIST",
-             ["arn:aws:ecr:eu-west-1:000000000000:repository/portal-*"]],
-        )
-        self.assertEqual(policy[-1]["Action"], ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"])
-        identity = docs["publisher-identity"]["spec"]["forProvider"]
-        self.assertEqual((identity["clusterName"], identity["namespace"], identity["serviceAccount"]), ("example-cluster", "example", "portal-publisher"))
-        self.assertEqual(identity["roleArnRef"], {"name": "portal-publisher"})
-
-    def test_files_mode_has_no_function_and_caches_everything(self):
-        xr = yaml.safe_load((ROOT / "examples/crossplane/webapp.yaml").read_text())
-        xr["spec"]["mode"] = "files"
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "xr.yaml"
-            path.write_text(yaml.safe_dump(xr))
-            result = subprocess.run(
-                ["crossplane", "render", str(path), str(self.composition), str(FIXTURES / "functions.yaml"),
-                 "--required-resources", str(FIXTURES / "platform-aws.yaml"),
-                 "--observed-resources", str(FIXTURES / "webapp-observed.yaml")],
-                text=True, capture_output=True, check=True,
+            self.assertRegex(
+                doc["metadata"]["name"], r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
             )
-        docs = {d["metadata"]["annotations"]["crossplane.io/composition-resource-name"]: d for d in documents(result.stdout)[1:]}
-        self.assertNotIn("function", docs)
-        # CORS is served by the CDN, not the bucket.
-        self.assertNotIn("website-cors", docs)
-        behavior = docs["distribution"]["spec"]["forProvider"]["defaultCacheBehavior"]
-        self.assertEqual(behavior["cachePolicyId"], "658327ea-f89d-4fab-a63d-7e88639e58f6")
-        self.assertEqual(behavior["responseHeadersPolicyId"], "60669652-455b-4ae9-85a4-c4c02393f86c")
-        self.assertNotIn("functionAssociation", behavior)
-        # The CRD rejects null: an empty list.
-        self.assertNotIn("orderedCacheBehavior", docs["distribution"]["spec"]["forProvider"])
-
-    def composed_origin(self, observed=None, secret=True):
-        xr = yaml.safe_load((ROOT / "examples/crossplane/webapp.yaml").read_text())
-        xr["spec"].update({"mode": "origin", "origin": {"hostname": "portal-origin.app.example.invalid", "secretRef": {"name": "assets-origin", "key": "header"}}})
-        del xr["spec"]["outputs"]
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "xr.yaml"
-            path.write_text(yaml.safe_dump(xr))
-            command = [
-                "crossplane", "render", str(path), str(self.composition), str(FIXTURES / "functions.yaml"),
-                "--required-resources", str(FIXTURES / "platform-aws.yaml"),
-            ]
-            if secret:
-                command += ["--required-resources", str(FIXTURES / "origin-secret.yaml")]
-            if observed:
-                command += ["--observed-resources", str(FIXTURES / observed)]
-            result = subprocess.run(command, text=True, capture_output=True)
-            if result.returncode:
-                raise AssertionError(result.stderr)
-            return {
-                d["metadata"]["annotations"]["crossplane.io/composition-resource-name"]: d
-                for d in documents(result.stdout)[1:]
-            }
-
-    def test_origin_mode_waits_for_its_secret(self):
-        docs = self.composed_origin("webapp-observed.yaml", secret=False)
-        self.assertNotIn("distribution", docs)
-        self.assertIn("certificate", docs)
-
-    def test_origin_mode_fronts_the_origin_without_storage(self):
-        docs = self.composed_origin("webapp-observed.yaml")
-        self.assertEqual(sorted(docs), ["certificate", "distribution", "record-a", "record-aaaa", "validation"])
-        distribution = docs["distribution"]["spec"]["forProvider"]
-        origin = distribution["origin"][0]
-        self.assertEqual(origin["domainName"], "portal-origin.app.example.invalid")
-        self.assertEqual(origin["customOriginConfig"]["originProtocolPolicy"], "https-only")
-        self.assertEqual(origin["customHeader"], [{"name": "X-CloudFront-Secret", "value": "s3cret"}])
-        behavior = distribution["defaultCacheBehavior"]
-        self.assertEqual(behavior["targetOriginId"], "portal-origin.app.example.invalid")
-        self.assertEqual(behavior["cachePolicyId"], "658327ea-f89d-4fab-a63d-7e88639e58f6")
-        self.assertNotIn("functionAssociation", behavior)
-        for absent in ["loggingConfig", "defaultRootObject", "orderedCacheBehavior"]:
-            self.assertNotIn(absent, distribution)
-        CACHE.mkdir(parents=True, exist_ok=True)
-        crd = yaml.safe_load(download("https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.9.0/package/crds/cloudfront.aws.m.upbound.io_distributions.yaml"))
-        version = next(v for v in crd["spec"]["versions"] if v["name"] == "v1beta1")
-        jsonschema.Draft7Validator(strict_schema(version["schema"]["openAPIV3Schema"])).validate(docs["distribution"])
+        database = docs["legacy-analytics-database"]
+        self.assertEqual(
+            database["metadata"]["annotations"]["crossplane.io/external-name"],
+            "legacy_analytics",
+        )
+        self.assertEqual(
+            database["spec"]["forProvider"]["owner"], "legacy_analytics-group-admin"
+        )
+        account = docs["legacy-analytics-account-api"]
+        self.assertEqual(
+            account["metadata"]["annotations"]["crossplane.io/external-name"],
+            "legacy_analytics-api",
+        )
+        self.assertEqual(
+            account["spec"]["forProvider"]["passwordSecretRef"],
+            {"name": "legacy-analytics-api", "key": "password"},
+        )
+        credentials = resource(resources, "ExternalSecret", "legacy-analytics-api")
+        self.assertEqual(
+            credentials["spec"]["target"]["template"]["data"]["username"],
+            "legacy_analytics-api",
+        )
+        self.assertEqual(
+            credentials["spec"]["data"][0]["remoteRef"]["key"],
+            "example-pgsql-backend-api-password",
+        )
 
 
 if __name__ == "__main__":

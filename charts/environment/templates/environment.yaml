@@ -1,10 +1,11 @@
 {{- if and .Values.maintenance.enabled (not (has "public" .Values.exposures)) -}}
 {{- fail "maintenance answers on the public exposure, which the environment must bind" -}}
 {{- end -}}
+{{- $namespace := .Values.namespace | default .Release.Namespace -}}
 apiVersion: mitis.cloud/v1alpha1
 kind: Environment
 metadata:
-  name: {{ .Values.namespace }}
+  name: {{ $namespace }}
   labels:
     app.kubernetes.io/managed-by: {{ .Release.Service }}
     helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
@@ -13,7 +14,7 @@ metadata:
     helm.sh/resource-policy: keep
     argocd.argoproj.io/sync-options: Delete=false
 spec:
-  namespace: {{ .Values.namespace }}
+  namespace: {{ $namespace }}
   exposures: {{ toJson .Values.exposures }}
   isolation: {{ toJson .Values.isolation }}
   maintenance: {{ toJson .Values.maintenance }}
@@ -22,9 +23,6 @@ spec:
   {{- end }}
   {{- with .Values.databases }}
   databases: {{ toJson . }}
-  {{- end }}
-  {{- with .Values.webapps }}
-  webapps: {{ toJson . }}
   {{- end }}
   {{- with .Values.objectStorage }}
   objectStorage: {{ toJson . }}

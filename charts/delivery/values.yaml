@@ -14,10 +14,6 @@ charts:
     repository: ghcr.io/mitis-cloud/charts
     name: environment
     serviceScopes: []
-  webapp:
-    repository: ghcr.io/mitis-cloud/charts
-    name: webapp
-    serviceScopes: []
 environments: {}
 releaseUnits: {}
 stageColors: []

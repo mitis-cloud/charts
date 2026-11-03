@@ -11,9 +11,9 @@
     },
     "namespace": {
       "type": "string",
-      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
       "maxLength": 63,
-      "description": "Application namespace the environment owns; also the environment's name."
+      "description": "Application namespace the environment owns; empty uses the release namespace."
     },
     "exposures": {
       "type": "array",
@@ -235,92 +235,6 @@
         }
       }
     },
-    "webapps": {
-      "type": "object",
-      "description": "Web applications by name, sharing the environment's maintenance switch.",
-      "additionalProperties": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "hostname"
-        ],
-        "properties": {
-          "hostname": {
-            "type": "string",
-            "minLength": 1
-          },
-          "cachedPaths": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "mode": {
-            "enum": [
-              "application",
-              "files",
-              "origin"
-            ]
-          },
-          "origin": {
-            "type": "object",
-            "description": "The existing HTTPS origin served in origin mode, which only answers requests carrying the secret header.",
-            "additionalProperties": false,
-            "required": [
-              "hostname",
-              "secretRef"
-            ],
-            "properties": {
-              "hostname": {
-                "type": "string",
-                "minLength": 1
-              },
-              "secretRef": {
-                "type": "object",
-                "description": "Secret in the environment namespace holding the secret header value.",
-                "additionalProperties": false,
-                "required": [
-                  "name",
-                  "key"
-                ],
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "key": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                }
-              }
-            }
-          }
-        },
-        "if": {
-          "properties": {
-            "mode": {
-              "const": "origin"
-            }
-          },
-          "required": [
-            "mode"
-          ]
-        },
-        "then": {
-          "required": [
-            "origin"
-          ]
-        },
-        "else": {
-          "not": {
-            "required": [
-              "origin"
-            ]
-          }
-        }
-      }
-    },
     "objectStorage": {
       "type": "object",
       "additionalProperties": {
@@ -434,23 +348,6 @@
         },
         "required": [
           "databases"
-        ]
-      },
-      "then": {
-        "required": [
-          "secrets"
-        ]
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "webapps": {
-            "minProperties": 1
-          }
-        },
-        "required": [
-          "webapps"
         ]
       },
       "then": {

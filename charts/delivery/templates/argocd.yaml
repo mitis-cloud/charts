@@ -205,7 +205,8 @@ spec:
     {{- end }}
   {{- end }}
 {{- with $env.environment }}
-{{- $chart := index $root.Values.charts "environment" }}
+{{- $environmentChart := $env.environmentChart | default "environment" }}
+{{- $chart := index $root.Values.charts $environmentChart }}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -220,7 +221,7 @@ spec:
   source:
     repoURL: {{ $chart.repository | quote }}
     chart: {{ $chart.name }}
-    targetRevision: {{ index $env.charts "environment" | quote }}
+    targetRevision: {{ index $env.charts $environmentChart | quote }}
     helm:
       releaseName: environment
       valuesObject: {{ toJson (merge (dict "namespace" $env.namespace) .) }}

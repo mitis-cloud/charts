@@ -17,8 +17,9 @@
 {{- end -}}
 {{- end -}}
 {{- range $envName, $env := .Values.environments -}}
-{{- if and (hasKey $env "environment") (not (hasKey $env.charts "environment")) -}}{{ fail (printf "environment %s is missing chart pin environment" $envName) }}{{- end -}}
-{{- if and (hasKey $env "environment") (not (hasKey $root.Values.charts "environment")) -}}{{ fail "environments with environment values need the environment chart" }}{{- end -}}
+{{- $environmentChart := $env.environmentChart | default "environment" -}}
+{{- if and (hasKey $env "environment") (not (hasKey $env.charts $environmentChart)) -}}{{ fail (printf "environment %s is missing chart pin %s" $envName $environmentChart) }}{{- end -}}
+{{- if and (hasKey $env "environment") (not (hasKey $root.Values.charts $environmentChart)) -}}{{ fail (printf "unknown environment chart %s" $environmentChart) }}{{- end -}}
 {{- range $unitName, $services := $env.units -}}
 {{- if not (hasKey $root.Values.releaseUnits $unitName) -}}{{ fail (printf "%s references unknown release unit %s" $envName $unitName) }}{{- end -}}
 {{- if gt (len (printf "%s-%s-%s" $root.Values.project $unitName $envName)) 63 -}}{{ fail "project-unit-environment names must fit in 63 characters" }}{{- end -}}
