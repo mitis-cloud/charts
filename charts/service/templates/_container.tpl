@@ -39,9 +39,30 @@ ports:
 {{- range $key, $value := $c.environment -}}
 {{- if ne $value nil -}}{{ $_ := set $environment $key $value }}{{- end -}}
 {{- end -}}
-{{- with $environment }}
+{{- $telemetry := and (eq .id "main") $root.Values.telemetry }}
+{{- if or $environment $telemetry }}
 env:
-  {{- range $key, $value := . }}
+  {{- if $telemetry }}
+  - name: HOST_IP
+    valueFrom:
+      fieldRef:
+        fieldPath: status.hostIP
+  - name: K8S_POD_IP
+    valueFrom:
+      fieldRef:
+        fieldPath: status.podIP
+  - name: K8S_POD_UID
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.uid
+  - name: OTEL_EXPORTER_OTLP_ENDPOINT
+    value: http://$(HOST_IP):4318
+  - name: OTEL_EXPORTER_OTLP_PROTOCOL
+    value: http/protobuf
+  - name: OTEL_RESOURCE_ATTRIBUTES
+    value: service.name={{ $telemetry.service | default (include "mitis.service.name" $root) }},deployment.environment={{ $telemetry.environment }},k8s.pod.ip=$(K8S_POD_IP),k8s.pod.uid=$(K8S_POD_UID)
+  {{- end }}
+  {{- range $key, $value := $environment }}
   {{- if ne $value nil }}
   - name: {{ $key | quote }}
     {{- if and (kindIs "map" $value) (hasKey $value "secret") }}

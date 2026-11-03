@@ -37,12 +37,23 @@ nodeSelector:
   env: {{ $root.Values.placement }}
   {{- end }}
 {{- end }}
-{{- if ne $root.Values.placement "any" }}
+{{- $spread := and (eq .id "main") $root.Values.availability }}
+{{- if or (ne $root.Values.placement "any") $spread }}
 tolerations:
+  {{- if ne $root.Values.placement "any" }}
   - key: env
     operator: Equal
     value: {{ $root.Values.placement }}
     effect: NoSchedule
+  {{- end }}
+  {{- if $spread }}
+  {{- range $taint := list "not-ready" "unreachable" }}
+  - key: node.kubernetes.io/{{ $taint }}
+    operator: Exists
+    effect: NoExecute
+    tolerationSeconds: 30
+  {{- end }}
+  {{- end }}
 {{- end }}
 {{- if and (eq .id "main") $root.Values.availability }}
 topologySpreadConstraints:
@@ -50,11 +61,12 @@ topologySpreadConstraints:
     minDomains: {{ $root.Values.availability.zones }}
     topologyKey: topology.kubernetes.io/zone
     whenUnsatisfiable: DoNotSchedule
+    nodeTaintsPolicy: Honor
     labelSelector:
       matchLabels:
         {{- include "mitis.service.selector" $root | nindent 8 }}
     matchLabelKeys:
-      - {{ ternary "rollouts-pod-template-hash" "pod-template-hash" (eq $root.Values.updates.strategy "canary") }}
+      - {{ ternary "rollouts-pod-template-hash" "pod-template-hash" (not (empty (include "mitis.service.rollout" $root))) }}
 {{- end }}
 {{- if $init }}
 initContainers:

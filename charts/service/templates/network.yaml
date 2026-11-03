@@ -2,7 +2,7 @@
 {{- if and (has .Values.render.part (list "all" "runtime" "application")) (eq .Values.workload "deployment") -}}
 {{- $root := . -}}
 {{- $name := include "mitis.service.name" . -}}
-{{- $canary := eq .Values.updates.strategy "canary" -}}
+{{- $canary := not (empty (include "mitis.service.rollout" $)) -}}
 {{- $services := list $name -}}
 {{- if $canary -}}{{ $services = append $services (printf "%s-candidate" $name) }}{{- end -}}
 {{- if .Values.ports -}}
@@ -26,6 +26,9 @@ spec:
       port: {{ if kindIs "map" $port }}{{ $port.listen }}{{ else if eq $portName "http" }}80{{ else }}{{ $port }}{{ end }}
       targetPort: {{ $portName }}
       protocol: TCP
+      {{- if eq $portName "grpc" }}
+      appProtocol: kubernetes.io/h2c
+      {{- end }}
     {{- end }}
 {{- end }}
 {{- end }}

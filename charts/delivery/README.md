@@ -46,6 +46,12 @@ Optional `clusterResources` lists additional `{group, kind}` pairs allowed in th
 
 Optional `scaledBy: external` (default `git`) declares that replica counts change outside Git, for example through scheduled downscaling: Argo ignores `spec.replicas` on Deployments, StatefulSets and Rollouts there, so automatic synchronization does not fight the scaler, and service-chart sources get `render.capacity: external` so their Understudy baseline doesn't either (requires service chart 0.3.1 or later).
 
+Optional `sync: automatic` applies Git changes to promoted units straight away, with pruning and self-healing. The default, `manual`, leaves them OutOfSync until a promotion or a manual sync. Units without images always sync automatically.
+
+Optional `syncWindows` lists when an environment may sync, each with a cron `schedule`, a `duration` and a `timeZone`. Nothing syncs outside them, including manual syncs. A promotion waits up to 72 hours for the next window instead of the usual 15 minutes, which also bounds how far apart windows can be.
+
+A service's optional `delegatedSelectors` lists Services whose selectors a canary controller rewrites, so Argo ignores those selectors.
+
 Every environment selects its services explicitly:
 
 ```yaml

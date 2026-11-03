@@ -6,6 +6,8 @@
 {{- if hasKey $env.units $unitName }}{{ $_ := set $environments $envName $env }}{{ end }}
 {{- end }}
 {{- if $environments }}
+{{- $automaticSync := false }}
+{{- range $env := $environments }}{{ if eq ($env.sync | default "manual") "automatic" }}{{ $automaticSync = true }}{{ end }}{{ end }}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
@@ -28,11 +30,20 @@ spec:
             charts: {{ toJson $env.charts }}
             layers: {{ toJson ($env.layers | default list) }}
             scaledBy: {{ $env.scaledBy | default "git" }}
+            {{- if $automaticSync }}
+            sync: {{ $env.sync | default "manual" }}
+            {{- end }}
             services: {{ include "mitis.delivery.services" (dict "root" $root "env" $env "unit" $unitName) }}
           {{- end }}
   # Sources live in the patch: each environment inserts its own layers between the service and its overrides.
   templatePatch: |
     spec:
+      {{- if $automaticSync }}
+      {{ "{{- if eq .sync \"automatic\" }}" }}
+      syncPolicy:
+        automated: {prune: true, selfHeal: true}
+      {{ "{{- end }}" }}
+      {{- end }}
       sources:
         {{- range $serviceName, $service := $unit.services }}
         {{- $chart := index $root.Values.charts $service.chart }}
@@ -92,6 +103,17 @@ spec:
           jsonPointers: [/metadata/labels/rollouts.argoproj.io~1gatewayapi-canary]
           jqPathExpressions: ['.spec.rules[].backendRefs[].weight']
         {{- range $serviceName, $service := $unit.services }}
+        {{- if $service.delegatedSelectors }}
+        {{ printf "{{- if index .services %q }}" $serviceName }}
+        {{- range $selector := $service.delegatedSelectors }}
+        - group: ''
+          kind: Service
+          name: {{ $selector }}
+          namespace: '{{ "{{ .namespace }}" }}'
+          jsonPointers: [/spec/selector]
+        {{- end }}
+        {{ "{{- end }}" }}
+        {{- end }}
         {{- if $service.capacityTargets }}
         {{ printf "{{- if index .services %q }}" $serviceName }}
         {{- range $target := $service.capacityTargets }}
@@ -168,6 +190,17 @@ spec:
   {{- $clusterResources = prepend $clusterResources (dict "group" "mitis.cloud" "kind" "Environment") }}
   {{- end }}
   clusterResourceWhitelist: {{ toJson ($clusterResources | uniq) }}
+  {{- with $env.syncWindows }}
+  syncWindows:
+    {{- range . }}
+    - kind: allow
+      schedule: {{ .schedule | quote }}
+      duration: {{ .duration }}
+      timeZone: {{ .timeZone }}
+      applications: ['*']
+      manualSync: false
+    {{- end }}
+  {{- end }}
 {{- with $env.environment }}
 {{- $chart := index $root.Values.charts "environment" }}
 ---

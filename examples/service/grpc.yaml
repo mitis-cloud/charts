@@ -1,0 +1,14 @@
+name: ledger
+image:
+  repository: example.invalid/application
+  tag: test-fixture
+capacity:
+  instances: 2
+mesh: true
+ports:
+  grpc: 50051
+updates:
+  strategy: canary
+render:
+  engine: argo
+  capacity: external

@@ -668,9 +668,169 @@ class ServiceContract(unittest.TestCase):
         )
 
 
+    def test_mesh_canary_keeps_rollouts_for_simpler_services(self):
+        docs = render(self.chart, ROOT / "examples/service/mesh-canary.yaml")
+        kinds = {d["kind"] for d in docs}
+        self.assertLessEqual({"Deployment", "Canary", "HorizontalPodAutoscaler"}, kinds)
+        self.assertFalse(kinds & {"Rollout", "AnalysisTemplate", "HTTPRoute"})
+        deployment = resource(docs, "Deployment")
+        self.assertEqual({"app": "gateway"}, deployment["spec"]["selector"]["matchLabels"])
+        self.assertEqual({"app": "gateway"}, resource(docs, "Service")["spec"]["selector"])
+        template = deployment["spec"]["template"]
+        self.assertEqual("gateway", template["metadata"]["labels"]["app.kubernetes.io/name"])
+        self.assertEqual("enabled", template["metadata"]["annotations"]["linkerd.io/inject"])
+        self.assertEqual(
+            "5432,6379,9092",
+            template["metadata"]["annotations"]["config.linkerd.io/skip-outbound-ports"],
+        )
+        spread = template["spec"]["topologySpreadConstraints"][0]
+        self.assertEqual({"app": "gateway"}, spread["labelSelector"]["matchLabels"])
+        self.assertEqual(["pod-template-hash"], spread["matchLabelKeys"])
+        self.assertEqual(
+            {"app": "gateway-primary"},
+            resource(docs, "PodDisruptionBudget")["spec"]["selector"]["matchLabels"],
+        )
+        hpa = resource(docs, "HorizontalPodAutoscaler")["spec"]
+        self.assertEqual((3, 3), (hpa["minReplicas"], hpa["maxReplicas"]))
+        self.assertEqual("main", hpa["metrics"][0]["containerResource"]["container"])
+        canary = resource(docs, "Canary")["spec"]
+        self.assertFalse(canary["skipAnalysis"])
+        self.assertEqual(8000, canary["service"]["port"])
+        self.assertEqual("5xx", canary["service"]["apex"]["annotations"]["retry.linkerd.io/http"])
+        self.assertEqual(
+            [("linkerd-http-success-rate", {"min": 99}), ("linkerd-http-request-duration", {"max": 500})],
+            [(m["name"], m["thresholdRange"]) for m in canary["analysis"]["metrics"]],
+        )
+        self.assertIn(
+            "http://gateway.example:8000/healthcheck",
+            canary["analysis"]["webhooks"][0]["metadata"]["cmd"],
+        )
+
+    def test_grpc_canary_without_checks_skips_analysis_and_git_capacity(self):
+        docs = render(self.chart, ROOT / "examples/service/grpc.yaml")
+        canary = resource(docs, "Canary")["spec"]
+        self.assertTrue(canary["skipAnalysis"])
+        self.assertNotIn("metrics", canary["analysis"])
+        self.assertNotIn("autoscalerRef", canary)
+        self.assertEqual("kubernetes.io/h2c", canary["service"]["appProtocol"])
+        self.assertEqual(
+            "internal,unavailable",
+            canary["service"]["apex"]["annotations"]["retry.linkerd.io/grpc"],
+        )
+        self.assertEqual(
+            "kubernetes.io/h2c", resource(docs, "Service")["spec"]["ports"][0]["appProtocol"]
+        )
+        self.assertFalse([d for d in docs if d["kind"] == "HorizontalPodAutoscaler"])
+
+    def test_mesh_without_canary_only_joins_the_mesh(self):
+        docs = render(self.chart, self.base, {"mesh": True})
+        self.assertFalse([d for d in docs if d["kind"] == "Canary"])
+        deployment = resource(docs, "Deployment")
+        self.assertIn("app.kubernetes.io/name", deployment["spec"]["selector"]["matchLabels"])
+        self.assertEqual("enabled", deployment["spec"]["template"]["metadata"]["annotations"]["linkerd.io/inject"])
+
+    def test_mesh_canary_rejects_what_it_cannot_honour(self):
+        mesh = {
+            "mesh": True,
+            "ports": {"http": 8080},
+            "updates": {"strategy": "canary"},
+            "render": {"engine": "argo"},
+        }
+        render(self.chart, self.base, mesh)
+        http = {"exposure": "public", "hostname": "api.test.example.com"}
+        job = {"command": ["/smoke"], "timeout": "1m", "capacity": {"cpu": "100m"}}
+        for invalid in [
+            {"render": {"engine": "helm"}},
+            {"capacity": {"instances": 0}},
+            {"updates": {"smoke": job}},
+            {"disruption": {"surgeBeforeEviction": True}},
+            {"http": http, "render": {"routing": "gateway"}},
+            {"ports": {"metrics": 9090}},
+            {"ports": {"grpc": 50051, "http": None}, "updates": {"canary": {"testPath": "/"}}},
+        ]:
+            with self.subTest(invalid=invalid):
+                render(self.chart, self.base, mesh, invalid, success=False)
+        render(self.chart, self.base, {"updates": {"canary": {"testPath": "/"}}}, success=False)
+        render(self.chart, self.base, {"workload": "resources", "mesh": True}, success=False)
+
+    def test_availability_tolerates_node_loss_and_bounds_disruption(self):
+        docs = render(
+            self.chart,
+            self.base,
+            {"capacity": {"instances": 2}, "availability": {"zones": 2}, "placement": "stable"},
+        )
+        pod = resource(docs, "Deployment")["spec"]["template"]["spec"]
+        self.assertEqual("Honor", pod["topologySpreadConstraints"][0]["nodeTaintsPolicy"])
+        self.assertEqual(
+            ["env", "node.kubernetes.io/not-ready", "node.kubernetes.io/unreachable"],
+            [t["key"] for t in pod["tolerations"]],
+        )
+        budget = resource(docs, "PodDisruptionBudget")["spec"]
+        self.assertEqual(1, budget["maxUnavailable"])
+        self.assertEqual("sample", budget["selector"]["matchLabels"]["app.kubernetes.io/name"])
+        self.assertFalse(
+            [d for d in render(self.chart, self.base) if d["kind"] == "PodDisruptionBudget"]
+        )
+
+    def test_telemetry_reports_from_the_main_process_only(self):
+        values = {
+            "telemetry": {"environment": "production", "service": "billing"},
+            "environment": {"A": "1"},
+            "sidecars": {"helper": {"command": ["/helper"]}},
+        }
+        pod = resource(render(self.chart, self.base, values), "Deployment")["spec"]["template"]["spec"]
+        main, helper = pod["containers"]
+        env = {e["name"]: e for e in main["env"]}
+        names = [e["name"] for e in main["env"]]
+        self.assertLess(names.index("HOST_IP"), names.index("OTEL_EXPORTER_OTLP_ENDPOINT"))
+        self.assertEqual("http://$(HOST_IP):4318", env["OTEL_EXPORTER_OTLP_ENDPOINT"]["value"])
+        self.assertIn(
+            "service.name=billing,deployment.environment=production",
+            env["OTEL_RESOURCE_ATTRIBUTES"]["value"],
+        )
+        self.assertEqual("1", env["A"]["value"])
+        self.assertNotIn("env", helper)
+        only = {"telemetry": {"environment": "production"}}
+        pod = resource(render(self.chart, self.base, only), "Deployment")["spec"]["template"]["spec"]
+        attributes = next(e for e in pod["containers"][0]["env"] if e["name"] == "OTEL_RESOURCE_ATTRIBUTES")
+        self.assertIn("service.name=sample,", attributes["value"])
+
+
 class DeliveryContract(unittest.TestCase):
     chart = ROOT / "charts/delivery"
     example = ROOT / "examples/delivery/platform.yaml"
+
+    def test_environments_choose_automatic_sync_and_windows(self):
+        docs = render(self.chart, self.example)
+        self.assertEqual(
+            {"prune": True, "selfHeal": True},
+            self.expanded_spec(docs, "backend", "test")["syncPolicy"]["automated"],
+        )
+        self.assertNotIn("syncPolicy", self.expanded_spec(docs, "backend", "production"))
+        windows = resource(docs, "AppProject", "example-test")["spec"]["syncWindows"]
+        self.assertEqual(["*"], windows[0]["applications"])
+        self.assertFalse(windows[0]["manualSync"])
+        self.assertNotIn("syncWindows", resource(docs, "AppProject", "example-production")["spec"])
+        waits = lambda stage: {
+            s["retry"]["timeout"]
+            for s in resource(docs, "Stage", stage)["spec"]["promotionTemplate"]["spec"]["steps"]
+            if s["uses"] == "argocd-update"
+        }
+        self.assertEqual({"72h"}, waits("test"))
+        self.assertEqual({"15m"}, waits("production"))
+
+    def test_delegated_selectors_are_scoped_to_named_services(self):
+        values = yaml.safe_load(self.example.read_text())
+        values["releaseUnits"]["worker"]["services"]["worker"]["delegatedSelectors"] = ["worker"]
+        docs = render(self.chart, values)
+        rules = [
+            r for r in self.expanded_spec(docs, "worker", "test")["ignoreDifferences"]
+            if r.get("jsonPointers") == ["/spec/selector"]
+        ]
+        self.assertEqual(
+            [{"group": "", "kind": "Service", "name": "worker", "namespace": "example-test", "jsonPointers": ["/spec/selector"]}],
+            rules,
+        )
 
     def test_one_warehouse_per_unit_and_one_stage_per_environment(self):
         docs = render(self.chart, self.example)

@@ -182,7 +182,8 @@ spec:
         # commit would mark other environments unhealthy after any later commit.
         - uses: argocd-update
           if: {{ $when | quote }}
-          retry: {timeout: 15m}
+          {{- /* A promotion made outside a sync window waits for the next one. */}}
+          retry: {timeout: {{ ternary "72h" "15m" (not (empty $env.syncWindows)) }}}
           config:
             apps:
               - name: {{ $root.Values.project }}-{{ $unitName }}-{{ $envName }}

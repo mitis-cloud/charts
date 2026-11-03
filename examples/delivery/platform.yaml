@@ -15,6 +15,9 @@ environments:
     vars: {stage: test}
     layers: [stages/test.yaml]
     scaledBy: external
+    sync: automatic
+    syncWindows:
+      - {schedule: 0 8 * * 1-5, duration: 11h30m, timeZone: Europe/Rome}
     environment:
       maintenance:
         hostnames: [api.example-test.invalid]
