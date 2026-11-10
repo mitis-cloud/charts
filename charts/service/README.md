@@ -120,6 +120,8 @@ jobs:
 
 The chart creates an empty `<name>-outputs` Secret and a chart-owned service account allowed to get, update and patch only that Secret. A process writes each key there through the Kubernetes API. An External Secrets `PushSecret` publishes every key to the secret store under the same remote-key rules as inputs, encrypted unless `sensitive: false`. Remote values are never deleted with the service.
 
+The `PushSecret` is applied after the service's jobs, because it is not ready until every declared key has been written and a readiness wait ahead of the job that writes them would never end. Under Helm it is a post-install/post-upgrade hook, so `helm uninstall` leaves it behind (it deletes nothing remote); under Argo it is an ordinary resource in a later wave.
+
 `{output: key}` reads a published value back as an optional environment variable: it is unset until first written, which lets a bootstrap step run once and become idempotent. Outputs replace cloud identities whose only purpose was writing to the secret store. They cannot be combined with `account`. The store must allow writes, and remote keys that already exist must be marked as managed by External Secrets. See the [outputs example](../../examples/service/outputs.yaml).
 
 ## Files, storage and helpers
