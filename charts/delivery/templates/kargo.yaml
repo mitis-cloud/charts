@@ -141,6 +141,7 @@ spec:
         {{- $node := $written }}
         {{- $keys := splitList "." $path }}
         {{- range $part := initial $keys }}
+        {{- if regexMatch "^[0-9]+$" $part }}{{ fail (printf "service %s: image path %s selects a list entry, which a service with gitValues cannot promote" $serviceName $path) }}{{ end }}
         {{- if not (hasKey $node $part) }}{{ $_ := set $node $part (dict) }}{{ end }}
         {{- $node = index $node $part }}
         {{- end }}
