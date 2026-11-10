@@ -958,6 +958,19 @@ class DeliveryContract(unittest.TestCase):
         self.assertIn('"plugin": {"image": {"tag": ' + pinned + '}}', write["config"]["contents"])
         self.assertEqual(write["if"], update["if"])
 
+    def test_image_paths_may_select_list_entries_by_position(self):
+        values = yaml.safe_load(self.example.read_text())
+        service = values["releaseUnits"]["backend"]["services"]["api"]
+        service["images"] = {"deployments.0.image.tag": "ghcr.io/example/backend"}
+        steps = resource(render(self.chart, values), "Stage", "test")["spec"]["promotionTemplate"]["spec"]["steps"]
+        update = next(s for s in steps if s["uses"] == "yaml-update" and s["config"]["path"].endswith("/api.yaml"))
+        self.assertEqual([u["key"] for u in update["config"]["updates"]], ["deployments.0.image.tag"])
+        service["gitValues"] = {"config": {"repository": "https://github.com/example/backend.git", "path": "config.yaml"}}
+        render(self.chart, values, success=False)
+        del service["gitValues"]
+        service["images"] = {"0.image.tag": "ghcr.io/example/backend"}
+        render(self.chart, values, success=False)
+
     def test_unknown_references_cycles_and_exclusions(self):
         for invalid in [
             {"environments": {"production": {"upstream": ["missing"]}}},
