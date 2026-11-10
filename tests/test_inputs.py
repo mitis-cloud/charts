@@ -180,7 +180,16 @@ class InputContract(unittest.TestCase):
         docs = render(self.chart, ROOT / "examples/service/outputs.yaml")
         secret = resource(docs, "Secret", "bootstrap-outputs")
         self.assertNotIn("data", secret)
-        push = resource(docs, "PushSecret", "bootstrap-outputs")["spec"]
+        published = resource(docs, "PushSecret", "bootstrap-outputs")
+        self.assertEqual(
+            published["metadata"]["annotations"],
+            {
+                "helm.sh/hook": "post-install,post-upgrade",
+                "helm.sh/hook-weight": "20",
+                "helm.sh/hook-delete-policy": "before-hook-creation",
+            },
+        )
+        push = published["spec"]
         self.assertEqual(push["deletionPolicy"], "None")
         self.assertEqual(push["selector"], {"secret": {"name": "bootstrap-outputs"}})
         pushed = {
@@ -215,6 +224,28 @@ class InputContract(unittest.TestCase):
             {"name": "bootstrap-outputs", "key": "api-token", "optional": True},
         )
         self.assertNotIn("ExternalSecret", [d["kind"] for d in docs])
+
+    def test_outputs_are_published_after_the_jobs_that_write_them(self):
+        values = yaml.safe_load((ROOT / "examples/service/outputs.yaml").read_text())
+        values["jobs"]["setup"]["order"] = 9
+        hooks = {
+            d["kind"]: int(d["metadata"]["annotations"]["helm.sh/hook-weight"])
+            for d in render(self.chart, values)
+            if d["kind"] in ("Job", "PushSecret")
+        }
+        self.assertLess(hooks["Job"], hooks["PushSecret"])
+
+        values["render"] = {"engine": "argo", "order": 2}
+        docs = render(self.chart, values)
+        waves = {
+            d["kind"]: int(d["metadata"]["annotations"]["argocd.argoproj.io/sync-wave"])
+            for d in docs
+            if d["kind"] in ("Job", "PushSecret", "Secret")
+        }
+        self.assertLess(waves["Secret"], waves["Job"])
+        self.assertLess(waves["Job"], waves["PushSecret"])
+        self.assertLess(waves["PushSecret"], 300)
+        self.assertNotIn("helm.sh/hook", resource(docs, "PushSecret")["metadata"]["annotations"])
 
     def test_outputs_fail_closed(self):
         base = yaml.safe_load((ROOT / "examples/service/outputs.yaml").read_text())

@@ -48,7 +48,14 @@ metadata:
   labels:
     {{- include "mitis.service.labels" $root | nindent 4 }}
   annotations:
-    {{- include "mitis.service.wave" (dict "root" $root "wave" -20) | nindent 4 }}
+    {{- /* Applied after the jobs: it is not ready until every key is written, and a readiness wait before them would never end. */}}
+    {{- if eq $root.Values.render.engine "argo" }}
+    {{- include "mitis.service.wave" (dict "root" $root "wave" 20) | nindent 4 }}
+    {{- else }}
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "20"
+    helm.sh/hook-delete-policy: before-hook-creation
+    {{- end }}
 spec:
   refreshInterval: {{ $root.Values.secretRefresh }}
   updatePolicy: Replace
