@@ -73,6 +73,16 @@ class StorageIdentity(unittest.TestCase):
         account = resource(self.identity, "ServiceAccount")
         self.assertEqual(account["metadata"]["annotations"]["eks.amazonaws.com/role-arn"], policy["Resource"])
 
+    def test_scoped_sessions_trust_only_the_identity_itself(self):
+        arn = "arn:aws:iam::000000000000:role/existing_engine"
+        trust = json.loads(resource(self.identity, "Role")["spec"]["forProvider"]["assumeRolePolicy"])["Statement"]
+        self.assertEqual(trust[-1], {"Effect": "Allow", "Action": "sts:AssumeRole", "Principal": {"AWS": arn}})
+        statements = json.loads(resource(self.identity, "Policy")["spec"]["forProvider"]["policy"])["Statement"]
+        self.assertEqual(statements[-1], {"Effect": "Allow", "Action": "sts:AssumeRole", "Resource": arn})
+        unobserved = documents(compose("workloadidentity").stdout)
+        trust = json.loads(resource(unobserved, "Role")["spec"]["forProvider"]["assumeRolePolicy"])["Statement"]
+        self.assertNotIn("sts:AssumeRole", [t["Action"] for t in trust if "AWS" in t["Principal"] and t["Principal"]["AWS"] == arn])
+
     def test_missing_storage_fails_without_replacing_permissions(self):
         result = compose("workloadidentity", observed="identity-observed", storage=False)
         self.assertNotEqual(result.returncode, 0)

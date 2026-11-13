@@ -80,6 +80,10 @@ spec:
             {{- $trust = append $trust (dict "Effect" "Allow" "Action" "sts:AssumeRole" "Principal" (dict "AWS" $nodes)) }}
             {{- end }}
             {{- if $spec.listStorage }}{{ $statements = append $statements (dict "Effect" "Allow" "Action" (list "s3:ListAllMyBuckets") "Resource" "*") }}{{ end }}
+            {{- if and $spec.issuesScopedSessions $roleArn }}
+            {{- $trust = append $trust (dict "Effect" "Allow" "Action" "sts:AssumeRole" "Principal" (dict "AWS" $roleArn)) }}
+            {{- $statements = append $statements (dict "Effect" "Allow" "Action" "sts:AssumeRole" "Resource" $roleArn) }}
+            {{- end }}
             ---
             apiVersion: iam.aws.m.upbound.io/v1beta1
             kind: Role
