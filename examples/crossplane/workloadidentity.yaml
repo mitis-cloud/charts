@@ -13,3 +13,4 @@ spec:
       access: read
   allowNodeAssumption: true
   listStorage: true
+  issuesScopedSessions: true

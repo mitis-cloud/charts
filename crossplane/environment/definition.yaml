@@ -214,6 +214,11 @@ spec:
                         default: false
                         description: Also permit the platform's worker identities to assume this identity
                           for engines using instance credentials.
+                      issuesScopedSessions:
+                        type: boolean
+                        default: false
+                        description: Allow this identity to assume itself, so a service such as a table
+                          catalog can issue sessions narrowed to the data a client requests.
                       listStorage:
                         type: boolean
                         default: false
