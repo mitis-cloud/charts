@@ -107,6 +107,9 @@ env:
         value: {{ $value | quote }}
       {{- end }}
     {{- end }}
+  {{- else if hasKey $probe "command" }}
+  exec:
+    command: {{ toJson $probe.command }}
   {{- else }}
   tcpSocket:
     port: {{ $probe.tcp }}

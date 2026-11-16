@@ -64,7 +64,7 @@ A resource-only service can serve a fixed `response: {status: 503, contentType: 
 
 `redirectFromHttp: true` additionally accepts plain HTTP solely to redirect to HTTPS. In Gateway mode the platform must also provide the `http` listener; the chart creates a separate redirect route. Omission requests HTTPS only.
 
-Each health check uses either `http: /path` (with optional `port` and literal `headers`) or `tcp: <port>`. Named ports must exist. `delay`, `interval`, `timeout`, and `failures` use seconds/counts, defaulting to 0, 10, 2, and 3; startup defaults to 30 failures. Startup, readiness, and liveness have distinct responsibilities. No endpoint is invented when health checks are omitted.
+Each health check uses `http: /path` (with optional `port` and literal `headers`), `tcp: <port>`, or `command: [...]` (since 0.7.0), which runs inside the container and is healthy on exit status 0. Named ports must exist. `delay`, `interval`, `timeout`, and `failures` use seconds/counts, defaulting to 0, 10, 2, and 3; startup defaults to 30 failures. Startup, readiness, and liveness have distinct responsibilities. No endpoint is invented when health checks are omitted.
 
 ## Environment and secrets
 

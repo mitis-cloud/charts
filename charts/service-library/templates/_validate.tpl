@@ -92,7 +92,7 @@
 {{- end -}}
 {{- range $probe, $p := $c.health -}}
 {{- $port := $p.tcp | default ($p.port | default "http") -}}
-{{- if and (kindIs "string" $port) (not (hasKey ($c.ports | default dict) $port)) -}}
+{{- if and (not (hasKey $p "command")) (kindIs "string" $port) (not (hasKey ($c.ports | default dict) $port)) -}}
 {{- fail (printf "%s.health.%s refers to unknown named port %s" $id $probe $port) -}}{{- end -}}
 {{- end -}}
 {{- end -}}

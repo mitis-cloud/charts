@@ -778,6 +778,39 @@ class ServiceContract(unittest.TestCase):
             [d for d in render(self.chart, self.base) if d["kind"] == "PodDisruptionBudget"]
         )
 
+    def test_command_health_checks_run_inside_the_container(self):
+        docs = render(
+            self.chart,
+            self.base,
+            {
+                "health": {
+                    "readiness": {"command": ["/bin/check", "--ready"], "interval": 5, "failures": 4},
+                    "liveness": {"command": ["/bin/check"]},
+                }
+            },
+        )
+        container = resource(docs, "Deployment")["spec"]["template"]["spec"]["containers"][0]
+        self.assertEqual(
+            container["readinessProbe"],
+            {
+                "exec": {"command": ["/bin/check", "--ready"]},
+                "initialDelaySeconds": 0,
+                "periodSeconds": 5,
+                "timeoutSeconds": 2,
+                "failureThreshold": 4,
+            },
+        )
+        self.assertEqual(container["livenessProbe"]["exec"], {"command": ["/bin/check"]})
+        for invalid in [
+            {"health": {"readiness": {"command": []}}},
+            {"health": {"readiness": {"command": ["check"], "http": "/ready"}}},
+            {"health": {"readiness": {"command": ["check"], "tcp": 8080}}},
+            {"health": {"readiness": {"command": ["check"], "port": "http"}}},
+            {"health": {"readiness": {"command": "check"}}},
+        ]:
+            with self.subTest(invalid=invalid):
+                render(self.chart, self.base, invalid, success=False)
+
     def test_telemetry_reports_from_the_main_process_only(self):
         values = {
             "telemetry": {"environment": "production", "service": "billing"},
