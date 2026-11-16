@@ -56,7 +56,7 @@ health:
 
 `ports` names the container's TCP ports and creates internal access. Simple `http` exposes service port 80; other simple ports expose their own number. Use `{target: 8080, listen: 8080}` for an explicit listening-port exception.
 
-`http.exposure` is `public` or `private`. `hostname` overrides `subdomain` + environment `domain`; the default subdomain is the service name. `aliases` adds hostnames. `paths` defaults to `[/]`; `port` defaults to `http`. All declared hosts must already have supported DNS/TLS infrastructure. External routes use HTTPS. [Routing prerequisites](../../docs/integrations.md) define the controller conventions.
+`http.exposure` is `public` or `private`. `hostname` overrides `subdomain` + environment `domain`; the default subdomain is the service name. `aliases` adds hostnames. `paths` defaults to `[/]`; `port` defaults to `http`. `healthcheck.port` (since 0.7.0) names another declared port for the load balancer to check, for processes that serve health on a separate management port; it defaults to the traffic port. All declared hosts must already have supported DNS/TLS infrastructure. External routes use HTTPS. [Routing prerequisites](../../docs/integrations.md) define the controller conventions.
 
 Set `subdomain: ''` explicitly to serve the base domain. Ingress-only `priority` preserves an explicit shared-ALB rule order (-1000–1000; lower numbers match first). Gateway mode rejects `priority` and `healthcheck`, whose ALB settings have no portable Gateway equivalent.
 

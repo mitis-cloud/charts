@@ -114,6 +114,10 @@ metadata:
     {{- with .successCodes }}
     alb.ingress.kubernetes.io/success-codes: {{ join "," . | quote }}
     {{- end }}
+    {{- with .port }}
+    {{- $check := index $root.Values.ports . }}
+    alb.ingress.kubernetes.io/healthcheck-port: {{ ternary $check.target $check (kindIs "map" $check) | quote }}
+    {{- end }}
     {{- end }}
     external-dns.alpha.kubernetes.io/hostname: {{ join "," $hosts | quote }}
     {{- if eq .exposure "private" }}

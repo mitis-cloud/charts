@@ -51,6 +51,9 @@
 {{- if $v.http -}}
 {{- if and (not $v.response) (not (hasKey $v.ports ($v.http.port | default "http"))) -}}{{ fail "http.port must identify a declared port" }}{{- end -}}
 {{- if and (not $v.http.hostname) (not $v.domain) -}}{{ fail "http requires hostname or domain" }}{{- end -}}
+{{- with ($v.http.healthcheck | default dict).port -}}
+{{- if not (hasKey $v.ports .) -}}{{ fail "http.healthcheck.port must identify a declared port" }}{{- end -}}
+{{- end -}}
 {{- if and (eq $v.render.routing "gateway") (or $v.http.healthcheck (hasKey $v.http "priority")) -}}{{ fail "http.healthcheck and http.priority require ingress routing; Gateway implementations own their health policy and route precedence" }}{{- end -}}
 {{- end -}}
 {{- if $v.response -}}

@@ -841,6 +841,26 @@ class ServiceContract(unittest.TestCase):
             with self.subTest(invalid=invalid):
                 render(self.chart, self.base, invalid, success=False)
 
+    def test_load_balancer_can_check_a_separate_port(self):
+        values = {
+            "domain": "example.com",
+            "ports": {"http": 8080, "management": {"target": 9000, "listen": 9000}},
+            "http": {
+                "exposure": "public",
+                "healthcheck": {"path": "/health/ready", "port": "management"},
+            },
+        }
+        annotations = resource(render(self.chart, self.base, values), "Ingress")["metadata"]["annotations"]
+        self.assertEqual(annotations["alb.ingress.kubernetes.io/healthcheck-port"], "9000")
+        self.assertEqual(annotations["alb.ingress.kubernetes.io/healthcheck-path"], "/health/ready")
+        values["http"]["healthcheck"] = {"path": "/health/ready"}
+        annotations = resource(render(self.chart, self.base, values), "Ingress")["metadata"]["annotations"]
+        self.assertNotIn("alb.ingress.kubernetes.io/healthcheck-port", annotations)
+        values["http"]["healthcheck"] = {"port": "missing"}
+        render(self.chart, self.base, values, success=False)
+        values["http"]["healthcheck"] = {"port": "management"}
+        render(self.chart, self.base, values, {"render": {"routing": "gateway"}}, success=False)
+
     def test_telemetry_reports_from_the_main_process_only(self):
         values = {
             "telemetry": {"environment": "production", "service": "billing"},
