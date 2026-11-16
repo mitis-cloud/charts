@@ -58,6 +58,16 @@ health:
 
 `http.exposure` is `public` or `private`. `hostname` overrides `subdomain` + environment `domain`; the default subdomain is the service name. `aliases` adds hostnames. `paths` defaults to `[/]`; `port` defaults to `http`. `healthcheck.port` (since 0.7.0) names another declared port for the load balancer to check, for processes that serve health on a separate management port; it defaults to the traffic port. All declared hosts must already have supported DNS/TLS infrastructure. External routes use HTTPS. [Routing prerequisites](../../docs/integrations.md) define the controller conventions.
 
+`http.also` (since 0.7.0) maps names to additional routes for the same port and health check, each `{exposure, subdomain or hostname, aliases, paths, priority, redirectFromHttp}`. A route named `console` on service `identity` renders as `identity-console`. Use it when one process serves a public API and a private console on different hostnames. An entry set to null is omitted. Canary strategies and fixed responses reject it.
+
+```yaml
+http:
+  exposure: public
+  subdomain: api
+  also:
+    console: {exposure: private, subdomain: console}
+```
+
 Set `subdomain: ''` explicitly to serve the base domain. Ingress-only `priority` preserves an explicit shared-ALB rule order (-1000–1000; lower numbers match first). Gateway mode rejects `priority` and `healthcheck`, whose ALB settings have no portable Gateway equivalent.
 
 A resource-only service can serve a fixed `response: {status: 503, contentType: text/html, body: '<h1>Maintenance</h1>'}` through `http` without a container. Status accepts 2xx, 4xx, and 5xx; content type defaults to `text/plain` and also accepts `text/css`, `text/html`, `application/javascript`, and `application/json`. Bodies are limited to 1024 UTF-8 bytes. This uses ALB fixed-response actions and therefore requires ingress routing; portable Gateway API has no equivalent response-body filter. It has no backend port or healthcheck. See the [response example](../../examples/service/response.yaml).

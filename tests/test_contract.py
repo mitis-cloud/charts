@@ -861,6 +861,68 @@ class ServiceContract(unittest.TestCase):
         values["http"]["healthcheck"] = {"port": "management"}
         render(self.chart, self.base, values, {"render": {"routing": "gateway"}}, success=False)
 
+    def test_additional_routes_share_the_port_and_health_check(self):
+        values = {
+            "domain": "example.com",
+            "ports": {"http": 8080, "management": 9000},
+            "http": {
+                "exposure": "public",
+                "subdomain": "api",
+                "priority": 10,
+                "healthcheck": {"path": "/ready", "port": "management"},
+                "also": {
+                    "console": {"exposure": "private", "subdomain": "console", "paths": ["/admin"]},
+                    "legacy": {"exposure": "public", "hostname": "old.example.net", "redirectFromHttp": True},
+                    "dropped": None,
+                },
+            },
+        }
+        docs = render(self.chart, self.base, values)
+        ingresses = {d["metadata"]["name"]: d for d in docs if d["kind"] == "Ingress"}
+        self.assertEqual(set(ingresses), {"sample", "sample-console", "sample-legacy"})
+        console = ingresses["sample-console"]
+        self.assertEqual(console["spec"]["ingressClassName"], "example-private")
+        self.assertEqual(console["spec"]["rules"][0]["host"], "console.example.com")
+        path = console["spec"]["rules"][0]["http"]["paths"][0]
+        self.assertEqual(path["path"], "/admin")
+        self.assertEqual(path["backend"], {"service": {"name": "sample", "port": {"number": 80}}})
+        annotations = console["metadata"]["annotations"]
+        self.assertEqual(annotations["alb.ingress.kubernetes.io/healthcheck-port"], "9000")
+        self.assertEqual(annotations["alb.ingress.kubernetes.io/healthcheck-path"], "/ready")
+        self.assertEqual(annotations["external-dns.alpha.kubernetes.io/route53-private-zone"], "true")
+        self.assertNotIn("alb.ingress.kubernetes.io/group.order", annotations)
+        self.assertEqual(ingresses["sample"]["spec"]["ingressClassName"], "example-public")
+        self.assertEqual(ingresses["sample-legacy"]["spec"]["rules"][0]["host"], "old.example.net")
+        self.assertEqual(len([d for d in docs if d["kind"] == "Service"]), 1)
+
+        gateway = {
+            "domain": "example.com",
+            "ports": {"http": 8080},
+            "render": {"routing": "gateway"},
+            "http": {
+                "exposure": "public",
+                "also": {"console": {"exposure": "private", "subdomain": "console", "redirectFromHttp": True}},
+            },
+        }
+        routes = {d["metadata"]["name"]: d for d in render(self.chart, self.base, gateway) if d["kind"] == "HTTPRoute"}
+        self.assertEqual(set(routes), {"sample", "sample-console", "sample-console-http"})
+        self.assertEqual(routes["sample-console"]["spec"]["parentRefs"][0]["name"], "private")
+        self.assertEqual(routes["sample-console"]["spec"]["hostnames"], ["console.example.com"])
+        self.assertEqual(routes["sample-console"]["spec"]["rules"][0]["backendRefs"][0]["name"], "sample")
+
+        also = lambda route, **http: {"domain": "example.com", "ports": {"http": 8080}, "http": {"exposure": "public", "also": {"console": route}, **http}}
+        for invalid in [
+            also({"exposure": "private"}),
+            also({"subdomain": "console"}),
+            also({"exposure": "private", "subdomain": "console", "port": "http"}),
+            {**also({"exposure": "private", "subdomain": "console", "priority": 5}), "render": {"routing": "gateway"}},
+            {"ports": {"http": 8080}, "http": {"exposure": "public", "hostname": "a.example.net", "also": {"console": {"exposure": "private", "subdomain": "console"}}}},
+            {**also({"exposure": "private", "subdomain": "console"}, redirectFromHttp=True), "render": {"routing": "gateway"}, "http": {"exposure": "public", "redirectFromHttp": True, "also": {"http": {"exposure": "private", "subdomain": "console"}}}},
+            {**also({"exposure": "private", "subdomain": "console"}), "mesh": True, "updates": {"strategy": "canary"}, "render": {"engine": "argo"}},
+        ]:
+            with self.subTest(invalid=invalid):
+                render(self.chart, self.base, invalid, success=False)
+
     def test_telemetry_reports_from_the_main_process_only(self):
         values = {
             "telemetry": {"environment": "production", "service": "billing"},

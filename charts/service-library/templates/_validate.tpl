@@ -55,6 +55,19 @@
 {{- if not (hasKey $v.ports .) -}}{{ fail "http.healthcheck.port must identify a declared port" }}{{- end -}}
 {{- end -}}
 {{- if and (eq $v.render.routing "gateway") (or $v.http.healthcheck (hasKey $v.http "priority")) -}}{{ fail "http.healthcheck and http.priority require ingress routing; Gateway implementations own their health policy and route precedence" }}{{- end -}}
+{{- $routes := dict -}}
+{{- include "mitis.service.reserve" (dict "identities" $routes "kind" "Route" "name" $name) -}}
+{{- if and $v.http.redirectFromHttp (eq $v.render.routing "gateway") -}}{{ include "mitis.service.reserve" (dict "identities" $routes "kind" "Route" "name" (printf "%s-http" $name)) }}{{- end -}}
+{{- range $key, $route := $v.http.also -}}
+{{- if eq (kindOf $route) "invalid" -}}{{ $_ := unset $v.http.also $key }}
+{{- else -}}
+{{- if or $v.response (eq $v.updates.strategy "canary") -}}{{ fail "http.also needs a running service without canary strategy; a canary shifts traffic on one route" }}{{- end -}}
+{{- if and (not $route.hostname) (not $v.domain) -}}{{ fail (printf "http.also.%s requires hostname or domain" $key) }}{{- end -}}
+{{- if and (eq $v.render.routing "gateway") (hasKey $route "priority") -}}{{ fail (printf "http.also.%s.priority requires ingress routing" $key) }}{{- end -}}
+{{- include "mitis.service.reserve" (dict "identities" $routes "kind" "Route" "name" (printf "%s-%s" $name $key)) -}}
+{{- if and $route.redirectFromHttp (eq $v.render.routing "gateway") -}}{{ include "mitis.service.reserve" (dict "identities" $routes "kind" "Route" "name" (printf "%s-%s-http" $name $key)) }}{{- end -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- if $v.response -}}
 {{- if or (ne $v.workload "resources") (ne $v.render.routing "ingress") (not $v.http) -}}{{ fail "response requires workload=resources, http, and ingress routing" }}{{- end -}}
