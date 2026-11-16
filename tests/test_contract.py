@@ -162,7 +162,7 @@ class ServiceContract(unittest.TestCase):
         for invalid in [
             {"mitis": {}},
             {"rawResources": {}},
-            {"workload": "stateful"},
+            {"workload": "daemon"},
             {"capacity": {"instnaces": 2}},
             {"storage": {"disk": {"access": "exclusive", "size": "20Gi"}}},
             {"storage": {"disk": {"existing": "other", "size": "20Gi"}}},
@@ -995,6 +995,105 @@ class ServiceContract(unittest.TestCase):
             {"permissions": [{"group": "", "resources": ["pods"], "actions": ["impersonate"]}]},
             success=False,
         )
+
+    def test_stateful_members_have_identity_storage_and_peers(self):
+        path = ROOT / "examples/service/stateful.yaml"
+        docs = render(self.chart, path)
+        self.assertFalse([d for d in docs if d["kind"] in ("Deployment", "PersistentVolumeClaim", "Understudy")])
+        workload = resource(docs, "StatefulSet", "broker")
+        spec = workload["spec"]
+        self.assertEqual(spec["replicas"], 3)
+        self.assertEqual(spec["serviceName"], "broker-peers")
+        self.assertEqual(spec["podManagementPolicy"], "Parallel")
+        self.assertEqual(spec["updateStrategy"], {"type": "RollingUpdate"})
+        self.assertEqual(
+            spec["persistentVolumeClaimRetentionPolicy"],
+            {"whenDeleted": "Retain", "whenScaled": "Retain"},
+        )
+        self.assertNotIn("strategy", spec)
+        self.assertEqual(
+            spec["volumeClaimTemplates"],
+            [
+                {
+                    "metadata": {"name": "data"},
+                    "spec": {
+                        "accessModes": ["ReadWriteOnce"],
+                        "volumeMode": "Filesystem",
+                        "storageClassName": "block",
+                        "resources": {"requests": {"storage": "2Gi"}},
+                    },
+                }
+            ],
+        )
+        pod = spec["template"]["spec"]
+        self.assertEqual(pod["terminationGracePeriodSeconds"], 120)
+        self.assertNotIn("data", [v["name"] for v in pod["volumes"]])
+        container = pod["containers"][0]
+        self.assertIn({"name": "data", "mountPath": "/data"}, container["volumeMounts"])
+        self.assertEqual(container["lifecycle"]["preStop"]["exec"]["command"], ["/bin/broker", "leave"])
+        (spread,) = pod["topologySpreadConstraints"]
+        self.assertEqual((spread["topologyKey"], spread["minDomains"]), ("kubernetes.io/hostname", 3))
+        self.assertNotIn("matchLabelKeys", spread)
+        self.assertIn("checksum/configuration", spec["template"]["metadata"]["annotations"])
+        self.assertEqual(workload["metadata"]["annotations"]["reloader.stakater.com/auto"], "true")
+
+        peers = resource(docs, "Service", "broker-peers")["spec"]
+        self.assertEqual(peers["clusterIP"], "None")
+        self.assertTrue(peers["publishNotReadyAddresses"])
+        self.assertEqual(peers["selector"], spec["selector"]["matchLabels"])
+        self.assertEqual(
+            [(p["name"], p["port"]) for p in peers["ports"]],
+            [("client", 4222), ("cluster", 6222), ("monitor", 8222)],
+        )
+        self.assertNotIn("clusterIP", resource(docs, "Service", "broker")["spec"])
+        self.assertEqual(resource(docs, "PodDisruptionBudget")["spec"]["maxUnavailable"], 1)
+
+        values = yaml.safe_load(path.read_text())
+        del values["instanceStorage"]
+        values["storage"]["data"]["name"] = "journal"
+        values["init"] = {"prepare": {"mounts": {"data": "/data"}}}
+        values["ports"]["http"] = 8080
+        docs = render(self.chart, values, {"render": {"engine": "argo", "capacity": "external"}})
+        spec = resource(docs, "StatefulSet")["spec"]
+        (claim,) = spec["volumeClaimTemplates"]
+        self.assertEqual(claim["metadata"]["name"], "journal")
+        self.assertNotIn("storageClassName", claim["spec"])
+        pod = spec["template"]["spec"]
+        self.assertEqual(pod["containers"][0]["volumeMounts"][0]["name"], "journal")
+        self.assertEqual(pod["initContainers"][0]["volumeMounts"][0]["name"], "journal")
+        self.assertEqual(spec["replicas"], 3)
+        port = lambda service: {p["name"]: p["port"] for p in resource(docs, "Service", service)["spec"]["ports"]}["http"]
+        self.assertEqual(port("broker-peers"), 8080)
+        self.assertEqual(port("broker"), 80)
+
+        bare = render(self.chart, self.base, {"workload": "stateful"})
+        self.assertNotIn("volumeClaimTemplates", resource(bare, "StatefulSet")["spec"])
+        self.assertNotIn("ports", resource(bare, "Service", "sample-peers")["spec"])
+
+    def test_stateful_rejects_what_it_cannot_honour(self):
+        instance = {"storage": {"data": {"access": "instance", "size": "1Gi"}}, "mounts": {"data": "/data"}}
+        for invalid in [
+            instance,
+            {"workload": "stateful", "storage": {"data": {"access": "instance"}}},
+            {"workload": "stateful", "storage": {"data": {"access": "instance", "size": "1Gi", "retain": False}}},
+            {"workload": "stateful", "disruption": {"surgeBeforeEviction": True}},
+            {"workload": "stateful", "updates": {"strategy": "replace"}},
+            {"workload": "stateful", "updates": {"strategy": "canary"}},
+            {"workload": "stateful", **instance, "jobs": {"task": {"run": "before", "mounts": {"data": "/data"}}}},
+            {
+                "workload": "stateful",
+                "storage": {
+                    "data": {"access": "instance", "size": "1Gi"},
+                    "other": {"access": "instance", "size": "1Gi", "name": "data"},
+                },
+            },
+            {
+                "workload": "stateful",
+                "storage": {"data": {"temporary": True}, "other": {"access": "instance", "size": "1Gi", "name": "data"}},
+            },
+        ]:
+            with self.subTest(invalid=invalid):
+                render(self.chart, self.base, invalid, success=False)
 
     def test_telemetry_reports_from_the_main_process_only(self):
         values = {

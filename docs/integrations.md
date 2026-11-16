@@ -48,7 +48,7 @@ Existing installations need the **0.4.4 CRD upgrade explicitly**; Helm does not 
 
 ## Storage and secrets
 
-`sharedStorage` selects an existing ReadWriteMany filesystem class, without changing the cluster default. Its driver, backing retention, and access-point policies remain infrastructure concerns. Existing bindings retain their single owner. Read the [storage guide](storage.md) before provisioning or adopting durable volumes.
+`sharedStorage` selects an existing ReadWriteMany filesystem class, without changing the cluster default. `instanceStorage` selects the class for a stateful workload's per-instance volumes; omitted, those use the cluster default. Its driver, backing retention, and access-point policies remain infrastructure concerns. Existing bindings retain their single owner. Read the [storage guide](storage.md) before provisioning or adopting durable volumes.
 
 `secretStore` identifies an existing ClusterSecretStore (default `aws-ssm`); `secretPrefix` carries the authoritative remote-key scope. ESO must be authorized to read it. Its asynchronous synchronization supplies required Secret keys. Reloader must be installed with support for the selected workload kind if `updates.reload` is enabled. Native checksums handle ordinary declared file changes; external secret values are never read by Helm.
 

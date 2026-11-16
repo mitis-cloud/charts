@@ -112,9 +112,36 @@ spec:
 
 {{- define "mitis.service.render.network" -}}
 {{- include "mitis.service.validate" . -}}
-{{- if and (has .Values.render.part (list "all" "runtime" "application")) (eq .Values.workload "deployment") -}}
+{{- if and (has .Values.render.part (list "all" "runtime" "application")) (has .Values.workload (list "deployment" "stateful")) -}}
 {{- $root := . -}}
 {{- $name := include "mitis.service.name" . -}}
+{{- if eq .Values.workload "stateful" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-peers
+  labels:
+    {{- include "mitis.service.labels" $root | nindent 4 }}
+  annotations:
+    {{- include "mitis.service.wave" (dict "root" $root "wave" 0) | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  {{- /* Members must resolve each other before they are ready. */}}
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "mitis.service.selector" $root | nindent 4 }}
+  {{- with .Values.ports }}
+  ports:
+    {{- range $portName, $port := . }}
+    - name: {{ $portName }}
+      port: {{ if kindIs "map" $port }}{{ $port.target }}{{ else }}{{ $port }}{{ end }}
+      targetPort: {{ $portName }}
+      protocol: TCP
+    {{- end }}
+  {{- end }}
+{{- end }}
 {{- $canary := not (empty (include "mitis.service.rollout" $)) -}}
 {{- /* A mesh canary's controller owns its Service: Argo applying one could point traffic at pods that aren't ready. */}}
 {{- $services := ternary (list) (list $name) (not (empty (include "mitis.service.meshCanary" .))) -}}

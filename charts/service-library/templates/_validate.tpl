@@ -30,8 +30,10 @@
 {{- fail "service name/release name must be a DNS label of at most 40 characters" -}}{{- end -}}
 {{- if and $v.availability (lt (int $v.capacity.instances) (int $v.availability.zones)) -}}
 {{- fail "capacity.instances must cover availability.zones; omit availability when no zone constraint is wanted" -}}{{- end -}}
-{{- if and $v.disruption.surgeBeforeEviction (or (eq $v.updates.strategy "replace") (eq $v.workload "resources")) -}}
+{{- if and $v.disruption.surgeBeforeEviction (or (eq $v.updates.strategy "replace") (ne $v.workload "deployment")) -}}
 {{- fail "disruption.surgeBeforeEviction requires an overlap-safe continuous workload" -}}{{- end -}}
+{{- if and (eq $v.workload "stateful") (ne $v.updates.strategy "rolling") -}}
+{{- fail "a stateful workload replaces its members one at a time; updates.strategy must be rolling" -}}{{- end -}}
 {{- if and $v.updates.canary (not (include "mitis.service.meshCanary" .)) -}}
 {{- fail "updates.canary requires canary strategy and mesh" -}}{{- end -}}
 {{- if include "mitis.service.meshCanary" . -}}
@@ -88,6 +90,7 @@
 {{- $paths := dict -}}
 {{- range $volume, $mount := $c.mounts -}}
 {{- if not (hasKey $v.storage $volume) -}}{{ fail (printf "%s.mounts refers to unknown storage %s" $id $volume) }}{{- end -}}
+{{- if and (eq ((index $v.storage $volume).access | default "") "instance") (or (hasPrefix "job-" $id) (hasPrefix "smoke" $id)) -}}{{ fail (printf "%s mounts per-instance storage %s, which only the workload's own containers can reach" $id $volume) }}{{- end -}}
 {{- $path := $mount -}}{{ if kindIs "map" $mount }}{{ $path = $mount.path }}{{ end -}}
 {{- if and (kindIs "map" $mount) (has ".." (splitList "/" ($mount.subdirectory | default ""))) -}}{{ fail "mount subdirectory must not contain parent traversal" }}{{- end -}}
 {{- if hasKey $paths $path -}}{{ fail (printf "%s has duplicate mount path %s" $id $path) }}{{- end -}}
@@ -122,6 +125,12 @@
 {{- range $id, $volume := $v.storage -}}
 {{- if eq ($volume.access | default "") "shared" -}}
 {{- include "mitis.service.reserve" (dict "identities" $identities "kind" "PersistentVolumeClaim" "name" ($volume.name | default (printf "%s-%s" $name $id))) -}}
+{{- end -}}
+{{- if eq ($volume.access | default "") "instance" -}}
+{{- if ne $v.workload "stateful" -}}{{ fail (printf "storage.%s is per instance and requires workload=stateful" $id) }}{{- end -}}
+{{- include "mitis.service.reserve" (dict "identities" $identities "kind" "Volume" "name" ($volume.name | default $id)) -}}
+{{- else -}}
+{{- include "mitis.service.reserve" (dict "identities" $identities "kind" "Volume" "name" $id) -}}
 {{- end -}}
 {{- end -}}
 {{- $inputCount := add (len $inputs.secrets) (len $inputs.configs) (len $v.storage) -}}

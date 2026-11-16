@@ -1,4 +1,4 @@
-# Storage for Deployments and helpers
+# Storage for services and helpers
 
 Storage is declared once by name; each container explicitly declares its own mounts. The same vocabulary applies to the main process, init containers, sidecars, and jobs.
 
@@ -27,6 +27,29 @@ In AWS, EFS provisions an access point/directory in an existing infrastructure-o
 `name` pins the claim identity (otherwise `<service>-<storage-key>`). Never rename a durable claim as a cosmetic refactor: dynamic provisioning would create different backing and an empty directory. `retain` defaults to true; setting false is a deliberate deletion-policy change.
 
 The binding is explicit because Kubernetes has one cluster-wide default StorageClass, not a default per access mode. Reusing an EBS default for `shared` does not work. The class must actually support ReadWriteMany filesystem access and the retention policy the platform promises. The chart does not install storage drivers or classes.
+
+## Per-instance storage
+
+A stateful workload gives each member its own volume:
+
+```yaml
+workload: stateful
+instanceStorage: block
+capacity:
+  instances: 3
+storage:
+  data:
+    access: instance
+    size: 20Gi
+mounts:
+  data: /var/lib/app
+```
+
+`instanceStorage` is an environment default naming a class that provisions one ReadWriteOnce filesystem volume per claim; when omitted, the cluster's default class applies. Member `<service>-<ordinal>` uses claim `<storage-key>-<service>-<ordinal>`, for example `data-broker-0`. `name` on the entry replaces the storage key in that identity, which lets a service take over the claims of a workload that used another template name: a claim that already exists under the expected name is used as it is.
+
+Claims are retained when the service is removed and when it is scaled down; a member that returns finds its volume again. They are provisioned on first start, usually in the zone where the member is scheduled, and then pin that member to the zone. Use `availability.nodes` to keep members on different nodes; a strict zone spread can conflict with volumes that already exist elsewhere.
+
+Kubernetes does not let a running workload change its claim templates. To grow volumes, expand each claim through the storage class, then replace the workload object without deleting its members and apply the new `size`. Only the main process, its init containers and sidecars can mount per-instance storage; a job has no member identity.
 
 ## Existing or cross-service storage
 
@@ -90,4 +113,4 @@ Do not change access, identity, or backing during routine adoption. Moving a bin
 
 ## Explicitly deferred
 
-[ROADMAP.md](../ROADMAP.md) records StatefulSets with per-instance claims and exclusive block-backed Deployment storage. V1 rejects `workload: stateful`, `perInstance`, and `access: exclusive`. An EBS-backed directory is a filesystem on a block device; literal raw-device access is a separate unsupported requirement. Vendor charts retain their own storage capabilities.
+[ROADMAP.md](../ROADMAP.md) records exclusive block-backed Deployment storage. The schema rejects `access: exclusive`. An EBS-backed directory is a filesystem on a block device; literal raw-device access is a separate unsupported requirement. Vendor charts retain their own storage capabilities.

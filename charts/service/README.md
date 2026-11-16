@@ -10,7 +10,7 @@ The service definition is a closed interface. [values.schema.json](values.schema
 | Field | Default | Meaning |
 | --- | --- | --- |
 | `name` | Helm release name | Stable logical identity, maximum 40 characters. Keep identical across split owners. |
-| `workload` | `deployment` | `deployment` or `resources`; the latter has no primary container. |
+| `workload` | `deployment` | `deployment`, `stateful` (since 0.7.0) or `resources`; the last has no primary container. See [stateful workloads](#stateful-workloads). |
 | `image.repository` | required for a running container | Image repository. |
 | `image.tag`, `image.digest` | one required | SHA-256 digest wins if both are supplied. |
 | `image.pullPolicy` | `IfNotPresent` | Also accepts `Always` and `Never`. |
@@ -174,6 +174,17 @@ See the [complete file example](../../examples/service/input-files.yaml). Docume
 `permissions` provides namespace-scoped API access for a controller/helper: each entry has `group`, `resources`, `actions`, and optional resource `names`. It creates one service account, Role, and RoleBinding. With a root `account` (since 0.7.0) it creates only the Role and RoleBinding and binds that existing account, so one identity carries both its cloud access and its namespace permissions; a job reaches them by naming the same `account`. Pods mount the Kubernetes API token only when the chart owns their service account (`permissions` or `outputs`) or they use the account its permissions bind to. Allowed actions are get/list/watch/create/update/patch/delete/deletecollection. It does not grant cluster permissions.
 
 `tokens` (since 0.1.1) maps a logical name to `{audience, path, lifetime}` on any process, helper, or job. It projects a native service-account token into a dedicated read-only directory at `path`, with filename `token`. The optional `lifetime` requests 600–86400 seconds (default 3600); the API server can adjust it. Each process explicitly opts in. These tokens use the pod's service account, independently of the Kubernetes API token. They grant no permissions by themselves: the recipient's trust policy and the existing `account` remain infrastructure-owned. Direct directory mounts preserve kubelet token rotation; no subpath is used. Token directories must not overlap other mounts/files. See the [identity example](../../examples/service/identity.yaml).
+
+## Stateful workloads
+
+`workload: stateful` (since 0.7.0) runs the service as members with stable identities, `<name>-0` to `<name>-(instances-1)`, for processes that form a group or keep their own data. It uses the same definition as a deployment, with these differences:
+
+- A storage entry `{access: instance, size: 20Gi}` gives every member its own volume, mounted like any other storage. Claims are named `<storage-key>-<name>-<ordinal>` (`name` on the entry replaces the storage key), use the class in the environment's `instanceStorage` (the cluster default when omitted), and stay when the service is removed or scaled down. A workload that already runs cannot change `size`. Jobs cannot mount per-instance storage.
+- A `<name>-peers` Service resolves every member, ready or not, as `<name>-<ordinal>.<name>-peers`, on the containers' own port numbers. The ordinary `<name>` Service still balances across ready members. `{instance: name}` gives a member its own identity.
+- All members start together, because members that wait for each other to become ready would never start one at a time. Updates replace one member at a time, highest ordinal first, each waiting for the previous one to be ready.
+- `updates.strategy` must be `rolling`. Canary strategies and `disruption.surgeBeforeEviction` are rejected: a member cannot overlap with its replacement.
+
+The chart gives members identity, storage and discovery. Replication, quorum and membership changes belong to the application. See the [stateful example](../../examples/service/stateful.yaml) and the [storage guide](../../docs/storage.md#per-instance-storage).
 
 ## Jobs and updates
 

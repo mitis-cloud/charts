@@ -1,0 +1,42 @@
+name: broker
+workload: stateful
+instanceStorage: block
+image:
+  repository: example.invalid/broker
+  tag: fixture
+args: [--config, /etc/broker/broker.conf]
+capacity:
+  instances: 3
+  cpu: 100m
+  memory: 256Mi
+  memoryLimit: 512Mi
+availability:
+  nodes: true
+ports:
+  client: 4222
+  cluster: 6222
+  monitor: 8222
+health:
+  startup: {http: /healthz, port: monitor, failures: 90}
+  readiness: {command: [/bin/broker, check, --ready]}
+  liveness: {http: /healthz, port: monitor}
+shutdown:
+  grace: 120
+  command: [/bin/broker, leave]
+environment:
+  MEMBER: {instance: name}
+  ADMIN_PASSWORD: {ssm: broker-admin-password}
+files:
+  config:
+    path: /etc/broker/broker.conf
+    content: |
+      member: $MEMBER
+      data: /data
+      peers: [broker-0.broker-peers:6222, broker-1.broker-peers:6222, broker-2.broker-peers:6222]
+storage:
+  data:
+    access: instance
+    size: 2Gi
+mounts:
+  data: /data
+secretPrefix: test-

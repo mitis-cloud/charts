@@ -1,10 +1,11 @@
 {{- define "mitis.service.render.workload" -}}
 {{- include "mitis.service.validate" . -}}
-{{- if and (has .Values.render.part (list "all" "runtime" "application")) (eq .Values.workload "deployment") -}}
+{{- if and (has .Values.render.part (list "all" "runtime" "application")) (has .Values.workload (list "deployment" "stateful")) -}}
 {{- $name := include "mitis.service.name" . -}}
 {{- $canary := not (empty (include "mitis.service.rollout" .)) -}}
+{{- $stateful := eq .Values.workload "stateful" -}}
 apiVersion: {{ ternary "argoproj.io/v1alpha1" "apps/v1" $canary }}
-kind: {{ ternary "Rollout" "Deployment" $canary }}
+kind: {{ if $stateful }}StatefulSet{{ else }}{{ ternary "Rollout" "Deployment" $canary }}{{ end }}
 metadata:
   name: {{ $name }}
   labels:
@@ -24,6 +25,16 @@ spec:
   selector:
     matchLabels:
       {{- include "mitis.service.selector" . | nindent 6 }}
+  {{- if $stateful }}
+  serviceName: {{ $name }}-peers
+  {{- /* Members that need their peers to become ready would never start one at a time. */}}
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  {{- else }}
   strategy:
     {{- if $canary }}
     canary:
@@ -57,6 +68,7 @@ spec:
       maxSurge: 1
       maxUnavailable: 0
     {{- end }}
+  {{- end }}
   template:
     metadata:
       labels:
@@ -74,6 +86,24 @@ spec:
         {{- end }}
     spec:
       {{- include "mitis.service.pod" (dict "root" . "container" .Values "id" "main" "prefix" "" "init" .Values.init "sidecars" .Values.sidecars "restart" "Always") | nindent 6 }}
+{{- $claims := dict }}
+{{- range $id, $volume := .Values.storage }}{{ if eq ($volume.access | default "") "instance" }}{{ $_ := set $claims ($volume.name | default $id) $volume }}{{ end }}{{ end }}
+{{- if and $stateful $claims }}
+  volumeClaimTemplates:
+    {{- range $claim, $volume := $claims }}
+    - metadata:
+        name: {{ $claim }}
+      spec:
+        accessModes: [ReadWriteOnce]
+        volumeMode: Filesystem
+        {{- with $.Values.instanceStorage }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $volume.size | quote }}
+    {{- end }}
+{{- end }}
 {{- if .Values.disruption.surgeBeforeEviction }}
 ---
 apiVersion: apps.understudy.sh/v1alpha1

@@ -45,27 +45,17 @@ Planned work:
 
 Each provider needs its own validated integration evidence. Rendering against schemas does not establish controller behavior.
 
-The following proposed storage entries are **not supported chart values**. The
-current schema rejects them. Add capabilities only with a concrete consumer and a
-verified native lifecycle.
-
 ## Native StatefulSet services
 
-Proposed direction:
+Implemented in `service:0.7.0` as `workload: stateful` with `access: instance` storage. See the [service reference](charts/service/README.md#stateful-workloads) and the [storage guide](docs/storage.md#per-instance-storage).
 
-```yaml
-workload: stateful
-storage:
-  data:
-    perInstance: true
-    size: 20Gi
-```
+Members have stable identities, a peer Service for discovery, retained per-member claims, parallel start and readiness-ordered updates. Stable members do not implement replication or quorum. Growing volumes remains a manual procedure, because an ordinary StatefulSet upgrade cannot change `volumeClaimTemplates`.
 
-Deferred because the initial first-party Deployment inventory has no StatefulSet consumer. Vendor charts retain their own stateful support.
+Understudy and Argo Rollouts do not manage StatefulSets, so surge handover and canary strategies are rejected for this mode.
 
-Before implementation, establish stable member/DNS identities, explicit private versus shared storage, retained per-member claims, startup ordering and peer discovery, readiness-aware rolling updates, and a supported growth/recovery procedure. An ordinary StatefulSet upgrade cannot change `volumeClaimTemplates`. Stable members do not implement replication or quorum.
-
-Understudy 0.4.4 and Argo Rollouts do not manage StatefulSets. Do not imply their handover/canary behavior applies to this future mode.
+The following proposed storage entry is **not supported chart values**. The
+current schema rejects it. Add capabilities only with a concrete consumer and a
+verified native lifecycle.
 
 ## Exclusive block-backed Deployment storage
 

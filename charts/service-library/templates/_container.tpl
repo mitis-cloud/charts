@@ -128,7 +128,8 @@ lifecycle:
 {{- if or $c.mounts $c.files $c.tokens }}
 volumeMounts:
   {{- range $name, $mount := $c.mounts }}
-  - name: {{ $name }}
+  {{- $volume := index $root.Values.storage $name }}
+  - name: {{ if eq ($volume.access | default "") "instance" }}{{ $volume.name | default $name }}{{ else }}{{ $name }}{{ end }}
     {{- if kindIs "string" $mount }}
     mountPath: {{ $mount | quote }}
     {{- else }}

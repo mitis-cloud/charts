@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "properties": {
     "name": {"type": "string", "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?)?$", "maxLength": 40, "description": "Stable service identity; defaults to the release name. Keep it fixed across rendering phases."},
-    "workload": {"enum": ["deployment", "resources"], "description": "Run a continuous service or only its explicitly declared resources/jobs. Stateful workloads are roadmap-only."},
+    "workload": {"enum": ["deployment", "stateful", "resources"], "description": "Run a continuous service, a set of members with stable identities and per-instance storage, or only explicitly declared resources/jobs."},
     "image": {"$ref": "#/definitions/image"},
     "command": {"$ref": "#/definitions/strings"},
     "args": {"$ref": "#/definitions/strings"},
@@ -46,6 +46,7 @@
     "fileGroup": {"type": "integer", "minimum": 0, "description": "Group ID used for writable pod volumes."},
     "domain": {"type": "string"},
     "sharedStorage": {"$ref": "#/definitions/name", "description": "Existing shared-filesystem storage class, supplied once by environment defaults. Required when provisioning shared volumes."},
+    "instanceStorage": {"$ref": "#/definitions/name", "description": "Existing storage class for per-instance volumes, supplied once by environment defaults. Omitted uses the cluster default class."},
     "secretPrefix": {"type": "string", "description": "Prefix prepended to remote-secret names. Secret values never belong here."},
     "secretStore": {"$ref": "#/definitions/name", "description": "Existing cluster secret-store identity supplied by environment composition."},
     "secretRefresh": {"$ref": "#/definitions/duration", "description": "Refresh interval for generated input Secrets; defaults to 1h."},
@@ -84,6 +85,11 @@
             "access": {"const": "shared"}, "name": {"$ref": "#/definitions/name"},
             "size": {"$ref": "#/definitions/quantity", "description": "PVC request metadata; not an EFS quota."},
             "retain": {"type": "boolean", "description": "Retain the claim on chart removal; defaults to true."}
+          }},
+          {"type": "object", "additionalProperties": false, "required": ["access", "size"], "properties": {
+            "access": {"const": "instance"},
+            "name": {"$ref": "#/definitions/name", "description": "Claim template name; defaults to the storage key. Claims are named <name>-<service>-<ordinal>."},
+            "size": {"$ref": "#/definitions/quantity", "description": "Capacity of each member's volume. A running workload cannot change it."}
           }},
           {"type": "object", "additionalProperties": false, "required": ["existing"], "properties": {"existing": {"$ref": "#/definitions/name"}}},
           {"type": "object", "additionalProperties": false, "required": ["temporary"], "properties": {

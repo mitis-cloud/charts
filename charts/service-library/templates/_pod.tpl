@@ -8,7 +8,10 @@
 {{- range $key, $value := $sidecars -}}{{ $_ := set $containers (printf "sidecar-%s" $key) $value }}{{- end -}}
 {{- $volumes := dict -}}
 {{- range $id, $container := $containers -}}
-{{- range $name, $_ := $container.mounts -}}{{ $_ := set $volumes $name (index $root.Values.storage $name) }}{{- end -}}
+{{- range $name, $_ := $container.mounts -}}
+{{- /* Per-instance volumes come from the workload's claim templates. */ -}}
+{{- if ne ((index $root.Values.storage $name).access | default "") "instance" -}}{{ $_ := set $volumes $name (index $root.Values.storage $name) }}{{- end -}}
+{{- end -}}
 {{- end -}}
 restartPolicy: {{ .restart }}
 enableServiceLinks: false
@@ -71,8 +74,11 @@ topologySpreadConstraints:
     labelSelector:
       matchLabels:
         {{- include "mitis.service.selector" $root | nindent 8 }}
+    {{- /* Stateful members are replaced in place, so every revision counts toward the spread. */}}
+    {{- if ne $root.Values.workload "stateful" }}
     matchLabelKeys:
       - {{ ternary "rollouts-pod-template-hash" "pod-template-hash" (not (empty (include "mitis.service.rollout" $root))) }}
+    {{- end }}
   {{- end }}
   {{- end }}
 {{- end }}
