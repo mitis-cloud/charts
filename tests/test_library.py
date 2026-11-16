@@ -19,6 +19,41 @@ class ServiceLibrary(unittest.TestCase):
     service = ROOT / "charts/service"
     composed = ROOT / "tests/fixtures/composed"
 
+    def test_an_existing_configmap_is_consumed_without_a_second_owner(self):
+        definition = {
+            "image": {"repository": "example.invalid/service", "tag": "fixture"},
+            "files": {
+                "settings": {
+                    "path": "/etc/app/settings.yaml",
+                    "configMap": {"name": "shared-settings", "key": "settings.yaml"},
+                }
+            },
+        }
+        docs = render(self.service, definition)
+        self.assertFalse(
+            any(d["kind"] in ("ConfigMap", "Secret", "ExternalSecret") for d in docs)
+        )
+        pod = next(d for d in docs if d["kind"] == "Deployment")["spec"]["template"][
+            "spec"
+        ]
+        self.assertEqual(pod["volumes"][0]["configMap"]["name"], "shared-settings")
+        self.assertEqual(
+            pod["volumes"][0]["configMap"]["items"],
+            [{"key": "settings.yaml", "path": "settings.yaml"}],
+        )
+        render(
+            self.service,
+            definition,
+            {"files": {"settings": {"content": "duplicate"}}},
+            success=False,
+        )
+        render(
+            self.service,
+            definition,
+            {"files": {"settings": {"configMap": {"key": ""}}}},
+            success=False,
+        )
+
     def test_a_composed_service_equals_the_service_chart(self):
         for path in sorted((ROOT / "examples/service").glob("*.yaml")):
             with self.subTest(example=path.name):

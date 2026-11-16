@@ -255,9 +255,10 @@
     ]},
     "files": {"type": "object", "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {"oneOf": [{"type": "null"}, {
       "type": "object", "additionalProperties": false, "required": ["path"],
-      "oneOf": [{"required": ["content"]}, {"required": ["secret"]}, {"required": ["ssm"]}, {"required": ["format"]}, {"required": ["yaml"]}, {"required": ["json"]}, {"required": ["from"]}],
+      "oneOf": [{"required": ["content"]}, {"required": ["secret"]}, {"required": ["configMap"]}, {"required": ["ssm"]}, {"required": ["format"]}, {"required": ["yaml"]}, {"required": ["json"]}, {"required": ["from"]}],
       "properties": {
         "path": {"$ref": "#/definitions/path"}, "content": {"type": "string"}, "secret": {"$ref": "#/definitions/secret"},
+        "configMap": {"$ref": "#/definitions/secret", "description": "Read a key from an existing same-namespace ConfigMap without claiming ownership."},
         "ssm": {"$ref": "#/definitions/remote"}, "format": {"type": "string"},
         "yaml": {"$ref": "#/definitions/document"}, "json": {"$ref": "#/definitions/document"},
         "from": {"$ref": "#/definitions/name", "description": "Consume a uniquely named file declared by this service or one of its helpers."},

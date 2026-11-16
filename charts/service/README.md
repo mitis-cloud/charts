@@ -141,6 +141,8 @@ The `PushSecret` is applied after the service's jobs, because it is not ready un
 
 ## Files, storage and helpers
 
+Existing shared ConfigMaps can be consumed through `files.<key>: {path: /etc/app/config, configMap: {name: shared-config, key: config}}` (since 0.7.0), like existing Secret files. This does not create or own the ConfigMap. SubPath mounts need a pod restart to pick up changes; a composing chart can set `updates.restart` to a hash of its shared configuration.
+
 See the [storage guide](../../docs/storage.md) for the complete storage/mount reference.
 
 `files` maps a logical name to an absolute `path` and exactly one source:

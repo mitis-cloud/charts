@@ -133,6 +133,8 @@
 {{- $dataKey := $file.key | default $key -}}
 {{- if $file.secret -}}
 {{- $kind = "Secret" -}}{{ $name = $file.secret.name -}}{{ $dataKey = $file.secret.key -}}
+{{- else if $file.configMap -}}
+{{- $name = $file.configMap.name -}}{{ $dataKey = $file.configMap.key -}}
 {{- else -}}
 {{- $value := $file.content -}}
 {{- $serialize := "" -}}
@@ -152,7 +154,7 @@
 {{- end -}}
 {{- if $input.remotes -}}{{ $kind = "Secret" }}{{- end -}}
 {{- end -}}
-{{- mustToJson (dict "kind" $kind "name" $name "key" $dataKey "input" $input "generated" (not $file.secret) "producer" (not $consumer.from)) -}}
+{{- mustToJson (dict "kind" $kind "name" $name "key" $dataKey "input" $input "generated" (not (or $file.secret $file.configMap)) "producer" (not $consumer.from)) -}}
 {{- end -}}
 
 {{- define "mitis.service.addInput" -}}
