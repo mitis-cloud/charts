@@ -119,6 +119,12 @@ env:
   timeoutSeconds: {{ $probe.timeout | default 2 }}
   failureThreshold: {{ $probe.failures | default (ternary 30 3 (eq $kind "startup")) }}
 {{- end }}
+{{- if and (eq .id "main") (kindIs "map" $c.shutdown) }}
+lifecycle:
+  preStop:
+    exec:
+      command: {{ toJson $c.shutdown.command }}
+{{- end }}
 {{- if or $c.mounts $c.files $c.tokens }}
 volumeMounts:
   {{- range $name, $mount := $c.mounts }}

@@ -27,7 +27,7 @@ The service definition is a closed interface. [values.schema.json](values.schema
 | `telemetry.service` | service `name` | Reported service name, for processes that report as one application. |
 | `placement` | `any` | An existing workload pool such as `spot`, `stable`, or `analytics`, using the environment's `env` node label/taint convention. `any` adds no pool constraint. |
 | `identity.user`, `.group` | image defaults | Numeric process UID/GID, including zero. |
-| `shutdown` | `30` | Graceful termination budget in seconds. |
+| `shutdown` | `30` | Graceful termination budget in seconds. Since 0.7.0 also `{grace: 120, command: [...]}`: the command runs inside the main container before the stop signal, for a drain or leave request, and its duration counts against `grace` (default 30). |
 | `fileGroup` | omitted | Group ID for writable pod volumes; also supported on jobs. |
 | `architecture` | omitted | Require `amd64` or `arm64` nodes when the image is single-platform; applies to service jobs too. |
 | `security` | `image-defaults` | `restricted` requires non-root, a read-only root filesystem, no privilege escalation, dropped capabilities, and runtime-default seccomp. Declare a nonzero `identity.user` or use an image with a non-root user. |

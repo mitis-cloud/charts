@@ -33,7 +33,13 @@
     "security": {"enum": ["image-defaults", "restricted"], "description": "Restricted containers run non-root with a read-only root filesystem, no privilege escalation, all capabilities dropped, and the runtime-default seccomp profile."},
     "architecture": {"enum": ["amd64", "arm64"], "description": "Required node architecture when an image supports only one platform."},
     "account": {"$ref": "#/definitions/name", "description": "Existing infrastructure-owned service account, including any cloud identity binding. Mutually exclusive with chart-owned permissions."},
-    "shutdown": {"type": "integer", "minimum": 1, "description": "Graceful shutdown budget in seconds."},
+    "shutdown": {"oneOf": [
+      {"type": "integer", "minimum": 1},
+      {"type": "object", "additionalProperties": false, "required": ["command"], "properties": {
+        "grace": {"type": "integer", "minimum": 1, "description": "Graceful shutdown budget in seconds, including the command; defaults to 30."},
+        "command": {"type": "array", "minItems": 1, "items": {"type": "string"}, "description": "Command run inside the main container before the stop signal, such as a drain request."}
+      }}
+    ], "description": "Graceful shutdown budget in seconds, or an object adding a command that runs before the stop signal."},
     "fileGroup": {"type": "integer", "minimum": 0, "description": "Group ID used for writable pod volumes."},
     "domain": {"type": "string"},
     "sharedStorage": {"$ref": "#/definitions/name", "description": "Existing shared-filesystem storage class, supplied once by environment defaults. Required when provisioning shared volumes."},

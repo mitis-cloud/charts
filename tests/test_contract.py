@@ -811,6 +811,36 @@ class ServiceContract(unittest.TestCase):
             with self.subTest(invalid=invalid):
                 render(self.chart, self.base, invalid, success=False)
 
+    def test_shutdown_command_runs_before_the_stop_signal(self):
+        docs = render(
+            self.chart,
+            self.base,
+            {
+                "shutdown": {"grace": 120, "command": ["/bin/server", "--drain"]},
+                "sidecars": {"proxy": {}},
+            },
+        )
+        pod = resource(docs, "Deployment")["spec"]["template"]["spec"]
+        self.assertEqual(pod["terminationGracePeriodSeconds"], 120)
+        main, proxy = pod["containers"]
+        self.assertEqual(
+            main["lifecycle"], {"preStop": {"exec": {"command": ["/bin/server", "--drain"]}}}
+        )
+        self.assertNotIn("lifecycle", proxy)
+        pod = resource(render(self.chart, self.base, {"shutdown": {"command": ["drain"]}}), "Deployment")
+        self.assertEqual(pod["spec"]["template"]["spec"]["terminationGracePeriodSeconds"], 30)
+        pod = resource(render(self.chart, self.base, {"shutdown": 45}), "Deployment")
+        self.assertEqual(pod["spec"]["template"]["spec"]["terminationGracePeriodSeconds"], 45)
+        self.assertNotIn("lifecycle", pod["spec"]["template"]["spec"]["containers"][0])
+        for invalid in [
+            {"shutdown": {"grace": 60}},
+            {"shutdown": {"command": []}},
+            {"shutdown": {"command": ["drain"], "signal": "USR2"}},
+            {"workload": "resources", "shutdown": {"command": ["drain"]}},
+        ]:
+            with self.subTest(invalid=invalid):
+                render(self.chart, self.base, invalid, success=False)
+
     def test_telemetry_reports_from_the_main_process_only(self):
         values = {
             "telemetry": {"environment": "production", "service": "billing"},
