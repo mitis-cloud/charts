@@ -22,6 +22,7 @@ The service definition is a closed interface. [values.schema.json](values.schema
 | `capacity.memoryLimit` | `256Mi` | Memory ceiling. |
 | `capacity.cpuLimit` | omitted | Optional CPU ceiling; CPU is uncapped by default. |
 | `availability.zones` | omitted | Strict zone spread, ignoring tainted nodes, with a budget of one voluntary disruption and replacement 30 seconds after a node is lost. Instances must cover requested zones; two zones with one unavailable means reduced capacity. |
+| `availability.nodes` | omitted | Since 0.7.0. `true` keeps at most one instance per node, with the same disruption budget and node-loss replacement as `zones` and no zone constraint. For members that should not share a node but whose volumes or peers pin them to particular zones. May be combined with `zones`; each constraint applies independently. |
 | `mesh` | `false` | Joins the service mesh. Connections to ports 5432, 6379 and 9092 bypass it, because those protocols don't need its retries and its protocol detection delays them. |
 | `telemetry.environment` | omitted | Sends OpenTelemetry data to the collector on the instance's node, reporting this environment. Main process only. |
 | `telemetry.service` | service `name` | Reported service name, for processes that report as one application. |

@@ -55,11 +55,17 @@ tolerations:
   {{- end }}
   {{- end }}
 {{- end }}
-{{- if and (eq .id "main") $root.Values.availability }}
+{{- if $spread }}
 topologySpreadConstraints:
+  {{- $domains := dict }}
+  {{- with $root.Values.availability.zones }}{{ $_ := set $domains "topology.kubernetes.io/zone" . }}{{ end }}
+  {{- /* As many domains as instances means no node ever holds two. */}}
+  {{- if $root.Values.availability.nodes }}{{ $_ := set $domains "kubernetes.io/hostname" (max 1 (int $root.Values.capacity.instances)) }}{{ end }}
+  {{- range $key := list "topology.kubernetes.io/zone" "kubernetes.io/hostname" }}
+  {{- if hasKey $domains $key }}
   - maxSkew: 1
-    minDomains: {{ $root.Values.availability.zones }}
-    topologyKey: topology.kubernetes.io/zone
+    minDomains: {{ index $domains $key }}
+    topologyKey: {{ $key }}
     whenUnsatisfiable: DoNotSchedule
     nodeTaintsPolicy: Honor
     labelSelector:
@@ -67,6 +73,8 @@ topologySpreadConstraints:
         {{- include "mitis.service.selector" $root | nindent 8 }}
     matchLabelKeys:
       - {{ ternary "rollouts-pod-template-hash" "pod-template-hash" (not (empty (include "mitis.service.rollout" $root))) }}
+  {{- end }}
+  {{- end }}
 {{- end }}
 {{- if $init }}
 initContainers:

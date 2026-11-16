@@ -923,6 +923,28 @@ class ServiceContract(unittest.TestCase):
             with self.subTest(invalid=invalid):
                 render(self.chart, self.base, invalid, success=False)
 
+    def test_node_availability_spreads_without_a_zone_constraint(self):
+        docs = render(self.chart, self.base, {"capacity": {"instances": 3}, "availability": {"nodes": True}})
+        pod = resource(docs, "Deployment")["spec"]["template"]["spec"]
+        (spread,) = pod["topologySpreadConstraints"]
+        self.assertEqual(spread["topologyKey"], "kubernetes.io/hostname")
+        self.assertEqual(spread["minDomains"], 3)
+        self.assertEqual(spread["whenUnsatisfiable"], "DoNotSchedule")
+        self.assertEqual(
+            ["node.kubernetes.io/not-ready", "node.kubernetes.io/unreachable"],
+            [t["key"] for t in pod["tolerations"]],
+        )
+        self.assertEqual(1, resource(docs, "PodDisruptionBudget")["spec"]["maxUnavailable"])
+        both = render(self.chart, self.base, {"capacity": {"instances": 4}, "availability": {"zones": 2, "nodes": True}})
+        spreads = resource(both, "Deployment")["spec"]["template"]["spec"]["topologySpreadConstraints"]
+        self.assertEqual(
+            [("topology.kubernetes.io/zone", 2), ("kubernetes.io/hostname", 4)],
+            [(s["topologyKey"], s["minDomains"]) for s in spreads],
+        )
+        for invalid in [{"availability": {}}, {"availability": {"nodes": False}}, {"availability": {"nodes": 2}}]:
+            with self.subTest(invalid=invalid):
+                render(self.chart, self.base, invalid, success=False)
+
     def test_telemetry_reports_from_the_main_process_only(self):
         values = {
             "telemetry": {"environment": "production", "service": "billing"},

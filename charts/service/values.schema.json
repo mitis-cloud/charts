@@ -11,7 +11,10 @@
     "args": {"$ref": "#/definitions/strings"},
     "workingDirectory": {"$ref": "#/definitions/path"},
     "capacity": {"$ref": "#/definitions/capacity"},
-    "availability": {"type": "object", "additionalProperties": false, "required": ["zones"], "properties": {"zones": {"type": "integer", "minimum": 2, "description": "Strict eligible-zone spread; no automatic relaxation during zone loss."}}},
+    "availability": {"type": "object", "additionalProperties": false, "minProperties": 1, "properties": {
+      "zones": {"type": "integer", "minimum": 2, "description": "Strict eligible-zone spread; no automatic relaxation during zone loss."},
+      "nodes": {"const": true, "description": "At most one instance per node, without a zone constraint."}
+    }, "description": "Spread instances and allow one voluntary disruption at a time."},
     "mesh": {"type": "boolean", "description": "Join the service mesh. With canary strategy, the mesh shifts traffic instead of a Gateway."},
     "telemetry": {"type": "object", "additionalProperties": false, "required": ["environment"], "properties": {
       "environment": {"type": "string", "minLength": 1, "description": "Deployment environment reported with the service's telemetry."},
