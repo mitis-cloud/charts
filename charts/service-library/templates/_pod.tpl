@@ -12,7 +12,7 @@
 {{- end -}}
 restartPolicy: {{ .restart }}
 enableServiceLinks: false
-automountServiceAccountToken: {{ and (not $c.account) (eq (include "mitis.service.ownsAccount" $root) "true") }}
+automountServiceAccountToken: {{ or (and (not $c.account) (eq (include "mitis.service.ownsAccount" $root) "true")) (and (not (empty $c.account)) (eq $c.account (include "mitis.service.permittedAccount" $root))) }}
 terminationGracePeriodSeconds: {{ if kindIs "map" $c.shutdown }}{{ $c.shutdown.grace | default 30 }}{{ else }}{{ $c.shutdown | default 30 }}{{ end }}
 {{- if or (hasKey $c "fileGroup") (eq ($c.security | default "image-defaults") "restricted") }}
 securityContext:

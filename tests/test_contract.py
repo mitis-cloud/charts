@@ -432,7 +432,7 @@ class ServiceContract(unittest.TestCase):
             self.chart,
             self.base,
             {
-                "account": "existing",
+                "jobs": {"task": {"run": "before", "account": "existing"}},
                 "permissions": [
                     {"group": "", "resources": ["pods"], "actions": ["get"]}
                 ],
@@ -944,6 +944,57 @@ class ServiceContract(unittest.TestCase):
         for invalid in [{"availability": {}}, {"availability": {"nodes": False}}, {"availability": {"nodes": 2}}]:
             with self.subTest(invalid=invalid):
                 render(self.chart, self.base, invalid, success=False)
+
+    def test_permissions_bind_an_existing_account(self):
+        permissions = [
+            {"group": "batch", "resources": ["jobs"], "actions": ["create", "deletecollection"]}
+        ]
+        docs = render(
+            self.chart,
+            self.base,
+            {
+                "account": "launcher",
+                "permissions": permissions,
+                "jobs": {
+                    "same": {"run": "before", "account": "launcher"},
+                    "other": {"run": "before", "account": "reporter"},
+                    "plain": {"run": "before"},
+                },
+            },
+        )
+        self.assertFalse([d for d in docs if d["kind"] == "ServiceAccount"])
+        self.assertEqual(
+            resource(docs, "Role")["rules"],
+            [{"apiGroups": ["batch"], "resources": ["jobs"], "verbs": ["create", "deletecollection"]}],
+        )
+        self.assertEqual(
+            resource(docs, "RoleBinding")["subjects"],
+            [{"kind": "ServiceAccount", "name": "launcher", "namespace": "example"}],
+        )
+        pod = resource(docs, "Deployment")["spec"]["template"]["spec"]
+        self.assertEqual(pod["serviceAccountName"], "launcher")
+        self.assertTrue(pod["automountServiceAccountToken"])
+        job = lambda name: resource(docs, "Job", f"sample-{name}")["spec"]["template"]["spec"]
+        self.assertTrue(job("same")["automountServiceAccountToken"])
+        self.assertFalse(job("other")["automountServiceAccountToken"])
+        self.assertFalse(job("plain")["automountServiceAccountToken"])
+        self.assertNotIn("serviceAccountName", job("plain"))
+
+        owned = render(self.chart, self.base, {"permissions": permissions})
+        self.assertEqual(resource(owned, "ServiceAccount")["metadata"]["name"], "sample")
+        self.assertEqual(resource(owned, "RoleBinding")["subjects"][0]["name"], "sample")
+        render(
+            self.chart,
+            self.base,
+            {"account": "launcher", "outputs": {"token": {"ssm": "token"}}},
+            success=False,
+        )
+        render(
+            self.chart,
+            self.base,
+            {"permissions": [{"group": "", "resources": ["pods"], "actions": ["impersonate"]}]},
+            success=False,
+        )
 
     def test_telemetry_reports_from_the_main_process_only(self):
         values = {

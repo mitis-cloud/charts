@@ -92,6 +92,8 @@ metadata:
   name: {{ $name }}
   annotations:
     {{- include "mitis.service.wave" (dict "root" $root "wave" -20) | nindent 4 }}
+{{- end }}
+{{- if or (include "mitis.service.ownsAccount" .) .Values.permissions }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -127,7 +129,7 @@ roleRef:
   name: {{ $name }}-role
 subjects:
   - kind: ServiceAccount
-    name: {{ $name }}
+    name: {{ ternary $name (.Values.account | default $name) (not (empty (include "mitis.service.ownsAccount" .))) }}
     namespace: {{ .Release.Namespace }}
 {{- end }}
 {{- end }}

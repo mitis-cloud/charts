@@ -76,7 +76,7 @@
 {{- end -}}
 {{- $containers := include "mitis.service.containers" . | fromJson -}}
 {{- range $id, $c := $containers -}}
-{{- if and $c.account $v.permissions -}}{{ fail "account consumes an existing service account and cannot be combined with chart-owned permissions" }}{{- end -}}
+{{- if and $c.account $v.permissions (not $v.account) -}}{{ fail "permissions bind to the service's own account; declare account on the service itself to bind them to an existing one" }}{{- end -}}
 {{- if and $c.account $v.outputs -}}{{ fail "outputs are written with the chart-owned service account and cannot be combined with account" }}{{- end -}}
 {{- range $key, $value := $c.environment -}}
 {{- if and (kindIs "map" $value) (hasKey $value "output") (not (hasKey ($v.outputs | default dict) $value.output)) -}}{{ fail (printf "environment %s reads undeclared output %s" $key $value.output) }}{{- end -}}

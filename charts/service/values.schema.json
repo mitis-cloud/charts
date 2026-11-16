@@ -35,7 +35,7 @@
     "identity": {"$ref": "#/definitions/identity"},
     "security": {"enum": ["image-defaults", "restricted"], "description": "Restricted containers run non-root with a read-only root filesystem, no privilege escalation, all capabilities dropped, and the runtime-default seccomp profile."},
     "architecture": {"enum": ["amd64", "arm64"], "description": "Required node architecture when an image supports only one platform."},
-    "account": {"$ref": "#/definitions/name", "description": "Existing infrastructure-owned service account, including any cloud identity binding. Mutually exclusive with chart-owned permissions."},
+    "account": {"$ref": "#/definitions/name", "description": "Existing infrastructure-owned service account, including any cloud identity binding. Declared permissions bind to it instead of a chart-owned account."},
     "shutdown": {"oneOf": [
       {"type": "integer", "minimum": 1},
       {"type": "object", "additionalProperties": false, "required": ["command"], "properties": {
@@ -112,7 +112,7 @@
         "type": "object", "additionalProperties": false, "required": ["group", "resources", "actions"],
         "properties": {
           "group": {"type": "string"}, "resources": {"$ref": "#/definitions/strings"},
-          "actions": {"type": "array", "items": {"enum": ["get", "list", "watch", "create", "update", "patch", "delete"]}},
+          "actions": {"type": "array", "items": {"enum": ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]}},
           "names": {"$ref": "#/definitions/strings"}
         }
       }, "description": "Namespace-scoped API permissions for an actual controller/helper requirement. Never grants cluster permissions."
