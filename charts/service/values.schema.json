@@ -214,7 +214,7 @@
       }
     },
     "ssm": {"type": "object", "additionalProperties": false, "required": ["ssm"], "properties": {"ssm": {"$ref": "#/definitions/remote"}}},
-    "format": {"type": "object", "additionalProperties": false, "required": ["format"], "properties": {"format": {"type": "string"}}, "description": "Literal text with explicit {ssm:key} or {fact:name} substitutions; |urlquery is the only supported encoding operation."},
+    "format": {"type": "object", "additionalProperties": false, "required": ["format"], "properties": {"format": {"type": "string"}}, "description": "Literal text with explicit {ssm:key} or {fact:name} substitutions; |urlquery is the only supported encoding operation. Doubled braces are literal braces."},
     "document": {"oneOf": [
       {"type": ["string", "number", "boolean", "null"]},
       {"$ref": "#/definitions/ssm"},

@@ -93,7 +93,7 @@ environment:
 - `endpoint` uses an internal `service`, optional numeric `port`, `path`, and `scheme` (`http` by default). Kubernetes service-link variables (`<SERVICE>_SERVICE_HOST`) are always disabled; reach other services by DNS name.
 - `fact` reads a literal value from the environment's `facts` map; missing facts fail rendering.
 - `ssm` generates an ExternalSecret and an explicit Secret-key reference. `secretPrefix` is prepended; an object `{key: /actual/key, property: field, absolute: true}` bypasses it and optionally selects a property.
-- `format` substitutes only `{ssm:key}` and `{fact:name}`. Append `|urlquery` to URL-encode a substitution. Unknown references, operations and unmatched braces fail rendering. Other strings remain literal, including Go-template syntax.
+- `format` substitutes only `{ssm:key}` and `{fact:name}`. Append `|urlquery` to URL-encode a substitution. Write a literal brace as `{{` or `}}` (since 0.7.0), for formats such as `server {{ name: {fact:name} }}`. Unknown references, operations and unmatched braces fail rendering. Other strings remain literal, including Go-template syntax.
 - `secret` consumes an existing same-namespace Secret/key without creating it.
 - `instance` exposes `name`, `namespace`, or `ip` through the downward API.
 - An entry set to `null` is omitted, allowing environment overrides to remove a canonical variable.
@@ -134,7 +134,7 @@ See the [storage guide](../../docs/storage.md) for the complete storage/mount re
 | --- | --- |
 | `content` | Literal text, including `{{ ... }}`. |
 | `ssm` | A complete remote file; accepts the environment input's remote-key forms. |
-| `format` | Text using the same restricted substitutions as environment inputs. |
+| `format` | Text using the same restricted substitutions as environment inputs, including doubled braces for literal ones. |
 | `yaml`, `json` | Structured documents; leaves accept literals, `ssm`, `fact` and `format`. Serialization escapes values and preserves literal/fact types. |
 | `secret: {name, key}` | An existing external Secret key. |
 | `from` | Explicitly consume one uniquely named file declared by this service or a helper. |
