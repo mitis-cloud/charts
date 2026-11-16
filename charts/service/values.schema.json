@@ -119,7 +119,8 @@
         "capacity": {"enum": ["git", "external"], "description": "Who owns replica counts in Argo mode: git pins the Understudy baseline; external lets a scaler own them."}
       }, "description": "Finite orchestration selectors; every part must have a stable owner. Do not switch parts on an existing Helm release."
     },
-    "global": {"type": "object", "additionalProperties": false, "description": "Helm injects an empty global object into dependencies. No public fields are accepted here."}
+    "global": {"type": "object", "additionalProperties": false, "description": "Helm injects an empty global object into dependencies. No public fields are accepted here."},
+    "service-library": {"type": "object", "additionalProperties": false, "properties": {"global": {"type": "object", "additionalProperties": false}}, "description": "Helm injects this entry for the template library dependency. No public fields are accepted here."}
   },
   "definitions": {
     "name": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", "maxLength": 63},

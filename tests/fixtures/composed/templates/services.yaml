@@ -1,0 +1,3 @@
+{{- range $name, $service := .Values.services }}
+{{ include "mitis.service.render" (dict "root" $ "values" (mergeOverwrite (dict "name" $name) $service)) }}
+{{- end }}
