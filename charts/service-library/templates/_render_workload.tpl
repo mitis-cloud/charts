@@ -18,7 +18,7 @@ metadata:
     {{- end }}
 spec:
   {{- /* A mesh canary's controller and autoscaler own its replicas. */}}
-  {{- if not (include "mitis.service.meshCanary" .) }}
+  {{- if and (not (include "mitis.service.meshCanary" .)) (ne (toString .Values.capacity.instances) "external") }}
   replicas: {{ .Values.capacity.instances }}
   {{- end }}
   revisionHistoryLimit: 3

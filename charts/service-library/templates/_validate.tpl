@@ -23,6 +23,8 @@
 {{- end -}}
 {{- end -}}
 {{- $name := include "mitis.service.name" . -}}
+{{- if and (eq (toString $v.capacity.instances) "external") (or (ne $v.workload "deployment") (eq $v.updates.strategy "canary") $v.disruption.surgeBeforeEviction $v.availability) -}}
+{{- fail "capacity.instances=external requires a Deployment without canary, surgeBeforeEviction or availability constraints" -}}{{- end -}}
 {{- $identities := dict -}}
 {{- if and (eq $v.workload "resources") (or $v.init $v.sidecars $v.ports $v.health $v.environment $v.tokens $v.mounts (and $v.http (not $v.response)) $v.availability $v.command $v.args $v.identity $v.fileGroup $v.shutdown $v.workingDirectory $v.account $v.security $v.mesh $v.telemetry) -}}
 {{- fail "resource-only services declare container inputs on their jobs, not at the root" -}}{{- end -}}

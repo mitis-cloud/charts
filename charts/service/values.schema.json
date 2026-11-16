@@ -155,7 +155,7 @@
     "capacity": {
       "type": "object", "additionalProperties": false,
       "properties": {
-        "instances": {"type": "integer", "minimum": 0, "maximum": 2147483647},
+        "instances": {"oneOf": [{"type": "integer", "minimum": 0, "maximum": 2147483647}, {"const": "external"}], "description": "A fixed count, or external to omit replicas when another controller owns scaling."},
         "cpu": {"$ref": "#/definitions/cpu"},
         "memory": {"$ref": "#/definitions/quantity"},
         "cpuLimit": {"$ref": "#/definitions/cpu"},

@@ -23,9 +23,15 @@ class ServiceLibrary(unittest.TestCase):
         for path in sorted((ROOT / "examples/service").glob("*.yaml")):
             with self.subTest(example=path.name):
                 definition = yaml.safe_load(path.read_text())
-                direct = render(self.service, definition, {"name": definition.get("name", path.stem)})
+                direct = render(
+                    self.service,
+                    definition,
+                    {"name": definition.get("name", path.stem)},
+                )
                 composed = render(self.composed, {"services": {path.stem: definition}})
-                self.assertEqual(without_chart_label(direct), without_chart_label(composed))
+                self.assertEqual(
+                    without_chart_label(direct), without_chart_label(composed)
+                )
 
     def test_one_release_composes_several_services(self):
         image = {"repository": "example.invalid/service", "tag": "fixture"}
@@ -38,10 +44,38 @@ class ServiceLibrary(unittest.TestCase):
                 }
             },
         )
-        deployments = {d["metadata"]["name"]: d for d in docs if d["kind"] == "Deployment"}
+        deployments = {
+            d["metadata"]["name"]: d for d in docs if d["kind"] == "Deployment"
+        }
         self.assertEqual(set(deployments), {"server", "worker"})
         self.assertEqual(deployments["worker"]["spec"]["replicas"], 2)
-        self.assertEqual([d["metadata"]["name"] for d in docs if d["kind"] == "Service"], ["server"])
+        self.assertEqual(
+            [d["metadata"]["name"] for d in docs if d["kind"] == "Service"], ["server"]
+        )
+
+    def test_external_scaling_omits_replicas_only_on_the_owned_workload(self):
+        image = {"repository": "example.invalid/service", "tag": "fixture"}
+        worker = {"image": image, "capacity": {"instances": "external"}}
+        docs = render(
+            self.composed, {"services": {"server": {"image": image}, "worker": worker}}
+        )
+        deployments = {
+            d["metadata"]["name"]: d for d in docs if d["kind"] == "Deployment"
+        }
+        self.assertEqual(deployments["server"]["spec"]["replicas"], 1)
+        self.assertNotIn("replicas", deployments["worker"]["spec"])
+        direct = render(self.service, worker)
+        self.assertNotIn(
+            "replicas", next(d for d in direct if d["kind"] == "Deployment")["spec"]
+        )
+        for incompatible in (
+            {"workload": "stateful"},
+            {"updates": {"strategy": "canary"}},
+            {"disruption": {"surgeBeforeEviction": True}},
+            {"availability": {"nodes": True}},
+        ):
+            with self.subTest(incompatible=incompatible):
+                render(self.service, worker, incompatible, success=False)
 
     def test_environment_settings_and_ordering_reach_every_service(self):
         image = {"repository": "example.invalid/service", "tag": "fixture"}
@@ -81,14 +115,21 @@ class ServiceLibrary(unittest.TestCase):
             kinds,
         )
         broker = next(d for d in docs if d["kind"] == "StatefulSet")
-        self.assertEqual(broker["spec"]["volumeClaimTemplates"][0]["spec"]["storageClassName"], "block")
-        self.assertEqual(broker["spec"]["template"]["spec"]["nodeSelector"], {"env": "stable"})
+        self.assertEqual(
+            broker["spec"]["volumeClaimTemplates"][0]["spec"]["storageClassName"],
+            "block",
+        )
+        self.assertEqual(
+            broker["spec"]["template"]["spec"]["nodeSelector"], {"env": "stable"}
+        )
         controller = next(d for d in docs if d["kind"] == "Deployment")
         self.assertNotIn("nodeSelector", controller["spec"]["template"]["spec"])
         secret = next(d for d in docs if d["kind"] == "ExternalSecret")
         self.assertEqual(secret["spec"]["data"][0]["remoteRef"]["key"], "test-token")
         for doc in (broker, controller):
-            self.assertEqual(doc["metadata"]["annotations"]["argocd.argoproj.io/sync-wave"], "200")
+            self.assertEqual(
+                doc["metadata"]["annotations"]["argocd.argoproj.io/sync-wave"], "200"
+            )
 
 
 if __name__ == "__main__":
