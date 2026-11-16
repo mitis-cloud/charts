@@ -107,4 +107,6 @@ This is an explicit operation, not an action for routine CI synchronization. Des
 
 Consume native vendor charts directly with their documented values. A dedicated companion using `service` has its own values and declares its image, environment and storage explicitly. No wrapper or unified vendor/helper file is required.
 
+A product that prefers one definition for an application made of several processes can instead run those processes on the service definition and compose them in a chart of its own; see [composing services](integrations.md#composing-services-in-a-product-chart).
+
 Helmfile can order companion releases through `needs`. With the delivery chart, set `serviceScopes: []` for a direct vendor source so service-specific render parameters are not injected into it. Argo waves order resources only within one Application; a service helper's ordering slot does not annotate a vendor chart's resources. Preserve the product's native readiness and lifecycle requirements explicitly.

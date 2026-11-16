@@ -162,7 +162,7 @@ class ServiceContract(unittest.TestCase):
         for invalid in [
             {"mitis": {}},
             {"rawResources": {}},
-            {"workload": "stateful"},
+            {"workload": "daemon"},
             {"capacity": {"instnaces": 2}},
             {"storage": {"disk": {"access": "exclusive", "size": "20Gi"}}},
             {"storage": {"disk": {"existing": "other", "size": "20Gi"}}},
@@ -432,7 +432,7 @@ class ServiceContract(unittest.TestCase):
             self.chart,
             self.base,
             {
-                "account": "existing",
+                "jobs": {"task": {"run": "before", "account": "existing"}},
                 "permissions": [
                     {"group": "", "resources": ["pods"], "actions": ["get"]}
                 ],
@@ -777,6 +777,323 @@ class ServiceContract(unittest.TestCase):
         self.assertFalse(
             [d for d in render(self.chart, self.base) if d["kind"] == "PodDisruptionBudget"]
         )
+
+    def test_command_health_checks_run_inside_the_container(self):
+        docs = render(
+            self.chart,
+            self.base,
+            {
+                "health": {
+                    "readiness": {"command": ["/bin/check", "--ready"], "interval": 5, "failures": 4},
+                    "liveness": {"command": ["/bin/check"]},
+                }
+            },
+        )
+        container = resource(docs, "Deployment")["spec"]["template"]["spec"]["containers"][0]
+        self.assertEqual(
+            container["readinessProbe"],
+            {
+                "exec": {"command": ["/bin/check", "--ready"]},
+                "initialDelaySeconds": 0,
+                "periodSeconds": 5,
+                "timeoutSeconds": 2,
+                "failureThreshold": 4,
+            },
+        )
+        self.assertEqual(container["livenessProbe"]["exec"], {"command": ["/bin/check"]})
+        for invalid in [
+            {"health": {"readiness": {"command": []}}},
+            {"health": {"readiness": {"command": ["check"], "http": "/ready"}}},
+            {"health": {"readiness": {"command": ["check"], "tcp": 8080}}},
+            {"health": {"readiness": {"command": ["check"], "port": "http"}}},
+            {"health": {"readiness": {"command": "check"}}},
+        ]:
+            with self.subTest(invalid=invalid):
+                render(self.chart, self.base, invalid, success=False)
+
+    def test_shutdown_command_runs_before_the_stop_signal(self):
+        docs = render(
+            self.chart,
+            self.base,
+            {
+                "shutdown": {"grace": 120, "command": ["/bin/server", "--drain"]},
+                "sidecars": {"proxy": {}},
+            },
+        )
+        pod = resource(docs, "Deployment")["spec"]["template"]["spec"]
+        self.assertEqual(pod["terminationGracePeriodSeconds"], 120)
+        main, proxy = pod["containers"]
+        self.assertEqual(
+            main["lifecycle"], {"preStop": {"exec": {"command": ["/bin/server", "--drain"]}}}
+        )
+        self.assertNotIn("lifecycle", proxy)
+        pod = resource(render(self.chart, self.base, {"shutdown": {"command": ["drain"]}}), "Deployment")
+        self.assertEqual(pod["spec"]["template"]["spec"]["terminationGracePeriodSeconds"], 30)
+        pod = resource(render(self.chart, self.base, {"shutdown": 45}), "Deployment")
+        self.assertEqual(pod["spec"]["template"]["spec"]["terminationGracePeriodSeconds"], 45)
+        self.assertNotIn("lifecycle", pod["spec"]["template"]["spec"]["containers"][0])
+        for invalid in [
+            {"shutdown": {"grace": 60}},
+            {"shutdown": {"command": []}},
+            {"shutdown": {"command": ["drain"], "signal": "USR2"}},
+            {"workload": "resources", "shutdown": {"command": ["drain"]}},
+        ]:
+            with self.subTest(invalid=invalid):
+                render(self.chart, self.base, invalid, success=False)
+
+    def test_load_balancer_can_check_a_separate_port(self):
+        values = {
+            "domain": "example.com",
+            "ports": {"http": 8080, "management": {"target": 9000, "listen": 9000}},
+            "http": {
+                "exposure": "public",
+                "healthcheck": {"path": "/health/ready", "port": "management"},
+            },
+        }
+        annotations = resource(render(self.chart, self.base, values), "Ingress")["metadata"]["annotations"]
+        self.assertEqual(annotations["alb.ingress.kubernetes.io/healthcheck-port"], "9000")
+        self.assertEqual(annotations["alb.ingress.kubernetes.io/healthcheck-path"], "/health/ready")
+        values["http"]["healthcheck"] = {"path": "/health/ready"}
+        annotations = resource(render(self.chart, self.base, values), "Ingress")["metadata"]["annotations"]
+        self.assertNotIn("alb.ingress.kubernetes.io/healthcheck-port", annotations)
+        values["http"]["healthcheck"] = {"port": "missing"}
+        render(self.chart, self.base, values, success=False)
+        values["http"]["healthcheck"] = {"port": "management"}
+        render(self.chart, self.base, values, {"render": {"routing": "gateway"}}, success=False)
+
+    def test_additional_routes_share_the_port_and_health_check(self):
+        values = {
+            "domain": "example.com",
+            "ports": {"http": 8080, "management": 9000},
+            "http": {
+                "exposure": "public",
+                "subdomain": "api",
+                "priority": 10,
+                "healthcheck": {"path": "/ready", "port": "management"},
+                "also": {
+                    "console": {"exposure": "private", "subdomain": "console", "paths": ["/admin"]},
+                    "legacy": {"exposure": "public", "hostname": "old.example.net", "redirectFromHttp": True},
+                    "dropped": None,
+                },
+            },
+        }
+        docs = render(self.chart, self.base, values)
+        ingresses = {d["metadata"]["name"]: d for d in docs if d["kind"] == "Ingress"}
+        self.assertEqual(set(ingresses), {"sample", "sample-console", "sample-legacy"})
+        console = ingresses["sample-console"]
+        self.assertEqual(console["spec"]["ingressClassName"], "example-private")
+        self.assertEqual(console["spec"]["rules"][0]["host"], "console.example.com")
+        path = console["spec"]["rules"][0]["http"]["paths"][0]
+        self.assertEqual(path["path"], "/admin")
+        self.assertEqual(path["backend"], {"service": {"name": "sample", "port": {"number": 80}}})
+        annotations = console["metadata"]["annotations"]
+        self.assertEqual(annotations["alb.ingress.kubernetes.io/healthcheck-port"], "9000")
+        self.assertEqual(annotations["alb.ingress.kubernetes.io/healthcheck-path"], "/ready")
+        self.assertEqual(annotations["external-dns.alpha.kubernetes.io/route53-private-zone"], "true")
+        self.assertNotIn("alb.ingress.kubernetes.io/group.order", annotations)
+        self.assertEqual(ingresses["sample"]["spec"]["ingressClassName"], "example-public")
+        self.assertEqual(ingresses["sample-legacy"]["spec"]["rules"][0]["host"], "old.example.net")
+        self.assertEqual(len([d for d in docs if d["kind"] == "Service"]), 1)
+
+        gateway = {
+            "domain": "example.com",
+            "ports": {"http": 8080},
+            "render": {"routing": "gateway"},
+            "http": {
+                "exposure": "public",
+                "also": {"console": {"exposure": "private", "subdomain": "console", "redirectFromHttp": True}},
+            },
+        }
+        routes = {d["metadata"]["name"]: d for d in render(self.chart, self.base, gateway) if d["kind"] == "HTTPRoute"}
+        self.assertEqual(set(routes), {"sample", "sample-console", "sample-console-http"})
+        self.assertEqual(routes["sample-console"]["spec"]["parentRefs"][0]["name"], "private")
+        self.assertEqual(routes["sample-console"]["spec"]["hostnames"], ["console.example.com"])
+        self.assertEqual(routes["sample-console"]["spec"]["rules"][0]["backendRefs"][0]["name"], "sample")
+
+        also = lambda route, **http: {"domain": "example.com", "ports": {"http": 8080}, "http": {"exposure": "public", "also": {"console": route}, **http}}
+        for invalid in [
+            also({"exposure": "private"}),
+            also({"subdomain": "console"}),
+            also({"exposure": "private", "subdomain": "console", "port": "http"}),
+            {**also({"exposure": "private", "subdomain": "console", "priority": 5}), "render": {"routing": "gateway"}},
+            {"ports": {"http": 8080}, "http": {"exposure": "public", "hostname": "a.example.net", "also": {"console": {"exposure": "private", "subdomain": "console"}}}},
+            {**also({"exposure": "private", "subdomain": "console"}, redirectFromHttp=True), "render": {"routing": "gateway"}, "http": {"exposure": "public", "redirectFromHttp": True, "also": {"http": {"exposure": "private", "subdomain": "console"}}}},
+            {**also({"exposure": "private", "subdomain": "console"}), "mesh": True, "updates": {"strategy": "canary"}, "render": {"engine": "argo"}},
+        ]:
+            with self.subTest(invalid=invalid):
+                render(self.chart, self.base, invalid, success=False)
+
+    def test_node_availability_spreads_without_a_zone_constraint(self):
+        docs = render(self.chart, self.base, {"capacity": {"instances": 3}, "availability": {"nodes": True}})
+        pod = resource(docs, "Deployment")["spec"]["template"]["spec"]
+        (spread,) = pod["topologySpreadConstraints"]
+        self.assertEqual(spread["topologyKey"], "kubernetes.io/hostname")
+        self.assertEqual(spread["minDomains"], 3)
+        self.assertEqual(spread["whenUnsatisfiable"], "DoNotSchedule")
+        self.assertEqual(
+            ["node.kubernetes.io/not-ready", "node.kubernetes.io/unreachable"],
+            [t["key"] for t in pod["tolerations"]],
+        )
+        self.assertEqual(1, resource(docs, "PodDisruptionBudget")["spec"]["maxUnavailable"])
+        both = render(self.chart, self.base, {"capacity": {"instances": 4}, "availability": {"zones": 2, "nodes": True}})
+        spreads = resource(both, "Deployment")["spec"]["template"]["spec"]["topologySpreadConstraints"]
+        self.assertEqual(
+            [("topology.kubernetes.io/zone", 2), ("kubernetes.io/hostname", 4)],
+            [(s["topologyKey"], s["minDomains"]) for s in spreads],
+        )
+        for invalid in [{"availability": {}}, {"availability": {"nodes": False}}, {"availability": {"nodes": 2}}]:
+            with self.subTest(invalid=invalid):
+                render(self.chart, self.base, invalid, success=False)
+
+    def test_permissions_bind_an_existing_account(self):
+        permissions = [
+            {"group": "batch", "resources": ["jobs"], "actions": ["create", "deletecollection"]}
+        ]
+        docs = render(
+            self.chart,
+            self.base,
+            {
+                "account": "launcher",
+                "permissions": permissions,
+                "jobs": {
+                    "same": {"run": "before", "account": "launcher"},
+                    "other": {"run": "before", "account": "reporter"},
+                    "plain": {"run": "before"},
+                },
+            },
+        )
+        self.assertFalse([d for d in docs if d["kind"] == "ServiceAccount"])
+        self.assertEqual(
+            resource(docs, "Role")["rules"],
+            [{"apiGroups": ["batch"], "resources": ["jobs"], "verbs": ["create", "deletecollection"]}],
+        )
+        self.assertEqual(
+            resource(docs, "RoleBinding")["subjects"],
+            [{"kind": "ServiceAccount", "name": "launcher", "namespace": "example"}],
+        )
+        pod = resource(docs, "Deployment")["spec"]["template"]["spec"]
+        self.assertEqual(pod["serviceAccountName"], "launcher")
+        self.assertTrue(pod["automountServiceAccountToken"])
+        job = lambda name: resource(docs, "Job", f"sample-{name}")["spec"]["template"]["spec"]
+        self.assertTrue(job("same")["automountServiceAccountToken"])
+        self.assertFalse(job("other")["automountServiceAccountToken"])
+        self.assertFalse(job("plain")["automountServiceAccountToken"])
+        self.assertNotIn("serviceAccountName", job("plain"))
+
+        owned = render(self.chart, self.base, {"permissions": permissions})
+        self.assertEqual(resource(owned, "ServiceAccount")["metadata"]["name"], "sample")
+        self.assertEqual(resource(owned, "RoleBinding")["subjects"][0]["name"], "sample")
+        render(
+            self.chart,
+            self.base,
+            {"account": "launcher", "outputs": {"token": {"ssm": "token"}}},
+            success=False,
+        )
+        render(
+            self.chart,
+            self.base,
+            {"permissions": [{"group": "", "resources": ["pods"], "actions": ["impersonate"]}]},
+            success=False,
+        )
+
+    def test_stateful_members_have_identity_storage_and_peers(self):
+        path = ROOT / "examples/service/stateful.yaml"
+        docs = render(self.chart, path)
+        self.assertFalse([d for d in docs if d["kind"] in ("Deployment", "PersistentVolumeClaim", "Understudy")])
+        workload = resource(docs, "StatefulSet", "broker")
+        spec = workload["spec"]
+        self.assertEqual(spec["replicas"], 3)
+        self.assertEqual(spec["serviceName"], "broker-peers")
+        self.assertEqual(spec["podManagementPolicy"], "Parallel")
+        self.assertEqual(spec["updateStrategy"], {"type": "RollingUpdate"})
+        self.assertEqual(
+            spec["persistentVolumeClaimRetentionPolicy"],
+            {"whenDeleted": "Retain", "whenScaled": "Retain"},
+        )
+        self.assertNotIn("strategy", spec)
+        self.assertEqual(
+            spec["volumeClaimTemplates"],
+            [
+                {
+                    "metadata": {"name": "data"},
+                    "spec": {
+                        "accessModes": ["ReadWriteOnce"],
+                        "volumeMode": "Filesystem",
+                        "storageClassName": "block",
+                        "resources": {"requests": {"storage": "2Gi"}},
+                    },
+                }
+            ],
+        )
+        pod = spec["template"]["spec"]
+        self.assertEqual(pod["terminationGracePeriodSeconds"], 120)
+        self.assertNotIn("data", [v["name"] for v in pod["volumes"]])
+        container = pod["containers"][0]
+        self.assertIn({"name": "data", "mountPath": "/data"}, container["volumeMounts"])
+        self.assertEqual(container["lifecycle"]["preStop"]["exec"]["command"], ["/bin/broker", "leave"])
+        (spread,) = pod["topologySpreadConstraints"]
+        self.assertEqual((spread["topologyKey"], spread["minDomains"]), ("kubernetes.io/hostname", 3))
+        self.assertNotIn("matchLabelKeys", spread)
+        self.assertIn("checksum/configuration", spec["template"]["metadata"]["annotations"])
+        self.assertEqual(workload["metadata"]["annotations"]["reloader.stakater.com/auto"], "true")
+
+        peers = resource(docs, "Service", "broker-peers")["spec"]
+        self.assertEqual(peers["clusterIP"], "None")
+        self.assertTrue(peers["publishNotReadyAddresses"])
+        self.assertEqual(peers["selector"], spec["selector"]["matchLabels"])
+        self.assertEqual(
+            [(p["name"], p["port"]) for p in peers["ports"]],
+            [("client", 4222), ("cluster", 6222), ("monitor", 8222)],
+        )
+        self.assertNotIn("clusterIP", resource(docs, "Service", "broker")["spec"])
+        self.assertEqual(resource(docs, "PodDisruptionBudget")["spec"]["maxUnavailable"], 1)
+
+        values = yaml.safe_load(path.read_text())
+        del values["instanceStorage"]
+        values["storage"]["data"]["name"] = "journal"
+        values["init"] = {"prepare": {"mounts": {"data": "/data"}}}
+        values["ports"]["http"] = 8080
+        docs = render(self.chart, values, {"render": {"engine": "argo", "capacity": "external"}})
+        spec = resource(docs, "StatefulSet")["spec"]
+        (claim,) = spec["volumeClaimTemplates"]
+        self.assertEqual(claim["metadata"]["name"], "journal")
+        self.assertNotIn("storageClassName", claim["spec"])
+        pod = spec["template"]["spec"]
+        self.assertEqual(pod["containers"][0]["volumeMounts"][0]["name"], "journal")
+        self.assertEqual(pod["initContainers"][0]["volumeMounts"][0]["name"], "journal")
+        self.assertEqual(spec["replicas"], 3)
+        port = lambda service: {p["name"]: p["port"] for p in resource(docs, "Service", service)["spec"]["ports"]}["http"]
+        self.assertEqual(port("broker-peers"), 8080)
+        self.assertEqual(port("broker"), 80)
+
+        bare = render(self.chart, self.base, {"workload": "stateful"})
+        self.assertNotIn("volumeClaimTemplates", resource(bare, "StatefulSet")["spec"])
+        self.assertNotIn("ports", resource(bare, "Service", "sample-peers")["spec"])
+
+    def test_stateful_rejects_what_it_cannot_honour(self):
+        instance = {"storage": {"data": {"access": "instance", "size": "1Gi"}}, "mounts": {"data": "/data"}}
+        for invalid in [
+            instance,
+            {"workload": "stateful", "storage": {"data": {"access": "instance"}}},
+            {"workload": "stateful", "storage": {"data": {"access": "instance", "size": "1Gi", "retain": False}}},
+            {"workload": "stateful", "disruption": {"surgeBeforeEviction": True}},
+            {"workload": "stateful", "updates": {"strategy": "replace"}},
+            {"workload": "stateful", "updates": {"strategy": "canary"}},
+            {"workload": "stateful", **instance, "jobs": {"task": {"run": "before", "mounts": {"data": "/data"}}}},
+            {
+                "workload": "stateful",
+                "storage": {
+                    "data": {"access": "instance", "size": "1Gi"},
+                    "other": {"access": "instance", "size": "1Gi", "name": "data"},
+                },
+            },
+            {
+                "workload": "stateful",
+                "storage": {"data": {"temporary": True}, "other": {"access": "instance", "size": "1Gi", "name": "data"}},
+            },
+        ]:
+            with self.subTest(invalid=invalid):
+                render(self.chart, self.base, invalid, success=False)
 
     def test_telemetry_reports_from_the_main_process_only(self):
         values = {

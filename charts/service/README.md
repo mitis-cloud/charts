@@ -10,7 +10,7 @@ The service definition is a closed interface. [values.schema.json](values.schema
 | Field | Default | Meaning |
 | --- | --- | --- |
 | `name` | Helm release name | Stable logical identity, maximum 40 characters. Keep identical across split owners. |
-| `workload` | `deployment` | `deployment` or `resources`; the latter has no primary container. |
+| `workload` | `deployment` | `deployment`, `stateful` (since 0.7.0) or `resources`; the last has no primary container. See [stateful workloads](#stateful-workloads). |
 | `image.repository` | required for a running container | Image repository. |
 | `image.tag`, `image.digest` | one required | SHA-256 digest wins if both are supplied. |
 | `image.pullPolicy` | `IfNotPresent` | Also accepts `Always` and `Never`. |
@@ -22,16 +22,17 @@ The service definition is a closed interface. [values.schema.json](values.schema
 | `capacity.memoryLimit` | `256Mi` | Memory ceiling. |
 | `capacity.cpuLimit` | omitted | Optional CPU ceiling; CPU is uncapped by default. |
 | `availability.zones` | omitted | Strict zone spread, ignoring tainted nodes, with a budget of one voluntary disruption and replacement 30 seconds after a node is lost. Instances must cover requested zones; two zones with one unavailable means reduced capacity. |
+| `availability.nodes` | omitted | Since 0.7.0. `true` keeps at most one instance per node, with the same disruption budget and node-loss replacement as `zones` and no zone constraint. For members that should not share a node but whose volumes or peers pin them to particular zones. May be combined with `zones`; each constraint applies independently. |
 | `mesh` | `false` | Joins the service mesh. Connections to ports 5432, 6379 and 9092 bypass it, because those protocols don't need its retries and its protocol detection delays them. |
 | `telemetry.environment` | omitted | Sends OpenTelemetry data to the collector on the instance's node, reporting this environment. Main process only. |
 | `telemetry.service` | service `name` | Reported service name, for processes that report as one application. |
 | `placement` | `any` | An existing workload pool such as `spot`, `stable`, or `analytics`, using the environment's `env` node label/taint convention. `any` adds no pool constraint. |
 | `identity.user`, `.group` | image defaults | Numeric process UID/GID, including zero. |
-| `shutdown` | `30` | Graceful termination budget in seconds. |
+| `shutdown` | `30` | Graceful termination budget in seconds. Since 0.7.0 also `{grace: 120, command: [...]}`: the command runs inside the main container before the stop signal, for a drain or leave request, and its duration counts against `grace` (default 30). |
 | `fileGroup` | omitted | Group ID for writable pod volumes; also supported on jobs. |
 | `architecture` | omitted | Require `amd64` or `arm64` nodes when the image is single-platform; applies to service jobs too. |
 | `security` | `image-defaults` | `restricted` requires non-root, a read-only root filesystem, no privilege escalation, dropped capabilities, and runtime-default seccomp. Declare a nonzero `identity.user` or use an image with a non-root user. |
-| `account` | Kubernetes default | Consume an existing infrastructure-owned service account, including its cloud identity. Incompatible with chart-owned `permissions`. |
+| `account` | Kubernetes default | Consume an existing infrastructure-owned service account, including its cloud identity. Since 0.7.0, declared `permissions` bind to it. |
 
 New services roll with one surge instance and no planned unavailability. Adoption of existing services must record their actual settings instead of assuming these defaults are equivalent.
 
@@ -56,7 +57,17 @@ health:
 
 `ports` names the container's TCP ports and creates internal access. Simple `http` exposes service port 80; other simple ports expose their own number. Use `{target: 8080, listen: 8080}` for an explicit listening-port exception.
 
-`http.exposure` is `public` or `private`. `hostname` overrides `subdomain` + environment `domain`; the default subdomain is the service name. `aliases` adds hostnames. `paths` defaults to `[/]`; `port` defaults to `http`. All declared hosts must already have supported DNS/TLS infrastructure. External routes use HTTPS. [Routing prerequisites](../../docs/integrations.md) define the controller conventions.
+`http.exposure` is `public` or `private`. `hostname` overrides `subdomain` + environment `domain`; the default subdomain is the service name. `aliases` adds hostnames. `paths` defaults to `[/]`; `port` defaults to `http`. `healthcheck.port` (since 0.7.0) names another declared port for the load balancer to check, for processes that serve health on a separate management port; it defaults to the traffic port. All declared hosts must already have supported DNS/TLS infrastructure. External routes use HTTPS. [Routing prerequisites](../../docs/integrations.md) define the controller conventions.
+
+`http.also` (since 0.7.0) maps names to additional routes for the same port and health check, each `{exposure, subdomain or hostname, aliases, paths, priority, redirectFromHttp}`. A route named `console` on service `identity` renders as `identity-console`. Use it when one process serves a public API and a private console on different hostnames. An entry set to null is omitted. Canary strategies and fixed responses reject it.
+
+```yaml
+http:
+  exposure: public
+  subdomain: api
+  also:
+    console: {exposure: private, subdomain: console}
+```
 
 Set `subdomain: ''` explicitly to serve the base domain. Ingress-only `priority` preserves an explicit shared-ALB rule order (-1000–1000; lower numbers match first). Gateway mode rejects `priority` and `healthcheck`, whose ALB settings have no portable Gateway equivalent.
 
@@ -64,7 +75,11 @@ A resource-only service can serve a fixed `response: {status: 503, contentType: 
 
 `redirectFromHttp: true` additionally accepts plain HTTP solely to redirect to HTTPS. In Gateway mode the platform must also provide the `http` listener; the chart creates a separate redirect route. Omission requests HTTPS only.
 
-Each health check uses either `http: /path` (with optional `port` and literal `headers`) or `tcp: <port>`. Named ports must exist. `delay`, `interval`, `timeout`, and `failures` use seconds/counts, defaulting to 0, 10, 2, and 3; startup defaults to 30 failures. Startup, readiness, and liveness have distinct responsibilities. No endpoint is invented when health checks are omitted.
+Each health check uses `http: /path` (with optional `port` and literal `headers`), `tcp: <port>`, or `command: [...]` (since 0.7.0), which runs inside the container and is healthy on exit status 0. Named ports must exist. `delay`, `interval`, `timeout`, and `failures` use seconds/counts, defaulting to 0, 10, 2, and 3; startup defaults to 30 failures. Startup, readiness, and liveness have distinct responsibilities. No endpoint is invented when health checks are omitted.
+
+## External scaling
+
+Set `capacity.instances: external` (since 0.7.0) when an external controller owns a Deployment's replica count. The chart omits `spec.replicas`; the composing application owns the autoscaler and its policy. This cannot be combined with stateful workloads, canary updates, surge-before-eviction or availability constraints that require a known instance count. `render.capacity` still controls orchestration ownership and does not itself omit replicas.
 
 ## Environment and secrets
 
@@ -93,7 +108,7 @@ environment:
 - `endpoint` uses an internal `service`, optional numeric `port`, `path`, and `scheme` (`http` by default). Kubernetes service-link variables (`<SERVICE>_SERVICE_HOST`) are always disabled; reach other services by DNS name.
 - `fact` reads a literal value from the environment's `facts` map; missing facts fail rendering.
 - `ssm` generates an ExternalSecret and an explicit Secret-key reference. `secretPrefix` is prepended; an object `{key: /actual/key, property: field, absolute: true}` bypasses it and optionally selects a property.
-- `format` substitutes only `{ssm:key}` and `{fact:name}`. Append `|urlquery` to URL-encode a substitution. Unknown references, operations and unmatched braces fail rendering. Other strings remain literal, including Go-template syntax.
+- `format` substitutes only `{ssm:key}` and `{fact:name}`. Append `|urlquery` to URL-encode a substitution. Write a literal brace as `{{` or `}}` (since 0.7.0), for formats such as `server {{ name: {fact:name} }}`. Unknown references, operations and unmatched braces fail rendering. Other strings remain literal, including Go-template syntax.
 - `secret` consumes an existing same-namespace Secret/key without creating it.
 - `instance` exposes `name`, `namespace`, or `ip` through the downward API.
 - An entry set to `null` is omitted, allowing environment overrides to remove a canonical variable.
@@ -126,6 +141,8 @@ The `PushSecret` is applied after the service's jobs, because it is not ready un
 
 ## Files, storage and helpers
 
+Existing shared ConfigMaps can be consumed through `files.<key>: {path: /etc/app/config, configMap: {name: shared-config, key: config}}` (since 0.7.0), like existing Secret files. This does not create or own the ConfigMap. SubPath mounts need a pod restart to pick up changes; a composing chart can set `updates.restart` to a hash of its shared configuration.
+
 See the [storage guide](../../docs/storage.md) for the complete storage/mount reference.
 
 `files` maps a logical name to an absolute `path` and exactly one source:
@@ -134,7 +151,7 @@ See the [storage guide](../../docs/storage.md) for the complete storage/mount re
 | --- | --- |
 | `content` | Literal text, including `{{ ... }}`. |
 | `ssm` | A complete remote file; accepts the environment input's remote-key forms. |
-| `format` | Text using the same restricted substitutions as environment inputs. |
+| `format` | Text using the same restricted substitutions as environment inputs, including doubled braces for literal ones. |
 | `yaml`, `json` | Structured documents; leaves accept literals, `ssm`, `fact` and `format`. Serialization escapes values and preserves literal/fact types. |
 | `secret: {name, key}` | An existing external Secret key. |
 | `from` | Explicitly consume one uniquely named file declared by this service or a helper. |
@@ -160,9 +177,20 @@ See the [complete file example](../../examples/service/input-files.yaml). Docume
 
 `init` and `sidecars` map helper names to the same `image`, `command`, `args`, `workingDirectory`, `capacity`, `ports`, `health`, `environment`, `files`, `tokens`, `mounts`, `identity`, and `security` vocabulary. A helper inherits the **whole main image** only when its image object is absent. It does not inherit environment, files, tokens, mounts, or resources; helper resource reservations/ceilings are explicit and omitted when undeclared. Helper capacity has no instance count. Init helpers run in name order; use names expressing the required order when there are several. Sidecars are ordinary colocated containers.
 
-`permissions` provides namespace-scoped API access for a controller/helper: each entry has `group`, `resources`, `actions`, and optional resource `names`. It creates one service account, Role, and RoleBinding. Pods mount the Kubernetes API token only when the chart owns their service account (`permissions` or `outputs`). Allowed actions are get/list/watch/create/update/patch/delete. It does not grant cluster permissions.
+`permissions` provides namespace-scoped API access for a controller/helper: each entry has `group`, `resources`, `actions`, and optional resource `names`. It creates one service account, Role, and RoleBinding. With a root `account` (since 0.7.0) it creates only the Role and RoleBinding and binds that existing account, so one identity carries both its cloud access and its namespace permissions; a job reaches them by naming the same `account`. Pods mount the Kubernetes API token only when the chart owns their service account (`permissions` or `outputs`) or they use the account its permissions bind to. Allowed actions are get/list/watch/create/update/patch/delete/deletecollection. It does not grant cluster permissions.
 
 `tokens` (since 0.1.1) maps a logical name to `{audience, path, lifetime}` on any process, helper, or job. It projects a native service-account token into a dedicated read-only directory at `path`, with filename `token`. The optional `lifetime` requests 600–86400 seconds (default 3600); the API server can adjust it. Each process explicitly opts in. These tokens use the pod's service account, independently of the Kubernetes API token. They grant no permissions by themselves: the recipient's trust policy and the existing `account` remain infrastructure-owned. Direct directory mounts preserve kubelet token rotation; no subpath is used. Token directories must not overlap other mounts/files. See the [identity example](../../examples/service/identity.yaml).
+
+## Stateful workloads
+
+`workload: stateful` (since 0.7.0) runs the service as members with stable identities, `<name>-0` to `<name>-(instances-1)`, for processes that form a group or keep their own data. It uses the same definition as a deployment, with these differences:
+
+- A storage entry `{access: instance, size: 20Gi}` gives every member its own volume, mounted like any other storage. Claims are named `<storage-key>-<name>-<ordinal>` (`name` on the entry replaces the storage key), use the class in the environment's `instanceStorage` (the cluster default when omitted), and stay when the service is removed or scaled down. A workload that already runs cannot change `size`. Jobs cannot mount per-instance storage.
+- A `<name>-peers` Service resolves every member, ready or not, as `<name>-<ordinal>.<name>-peers`, on the containers' own port numbers. The ordinary `<name>` Service still balances across ready members. `{instance: name}` gives a member its own identity.
+- All members start together, because members that wait for each other to become ready would never start one at a time. Updates replace one member at a time, highest ordinal first, each waiting for the previous one to be ready.
+- `updates.strategy` must be `rolling`. Canary strategies and `disruption.surgeBeforeEviction` are rejected: a member cannot overlap with its replacement.
+
+The chart gives members identity, storage and discovery. Replication, quorum and membership changes belong to the application. See the [stateful example](../../examples/service/stateful.yaml) and the [storage guide](../../docs/storage.md#per-instance-storage).
 
 ## Jobs and updates
 

@@ -1,0 +1,150 @@
+{{- define "mitis.service.render.workload" -}}
+{{- include "mitis.service.validate" . -}}
+{{- if and (has .Values.render.part (list "all" "runtime" "application")) (has .Values.workload (list "deployment" "stateful")) -}}
+{{- $name := include "mitis.service.name" . -}}
+{{- $canary := not (empty (include "mitis.service.rollout" .)) -}}
+{{- $stateful := eq .Values.workload "stateful" -}}
+apiVersion: {{ ternary "argoproj.io/v1alpha1" "apps/v1" $canary }}
+kind: {{ if $stateful }}StatefulSet{{ else }}{{ ternary "Rollout" "Deployment" $canary }}{{ end }}
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "mitis.service.labels" . | nindent 4 }}
+  annotations:
+    {{- include "mitis.service.wave" (dict "root" . "wave" 0) | nindent 4 }}
+    {{- if and .Values.updates.reload .Values.updates.reloadSecrets }}
+    reloader.stakater.com/auto: 'true'
+    reloader.stakater.com/rollout-strategy: annotations
+    {{- end }}
+spec:
+  {{- /* A mesh canary's controller and autoscaler own its replicas. */}}
+  {{- if and (not (include "mitis.service.meshCanary" .)) (ne (toString .Values.capacity.instances) "external") }}
+  replicas: {{ .Values.capacity.instances }}
+  {{- end }}
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      {{- include "mitis.service.selector" . | nindent 6 }}
+  {{- if $stateful }}
+  serviceName: {{ $name }}-peers
+  {{- /* Members that need their peers to become ready would never start one at a time. */}}
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  {{- else }}
+  strategy:
+    {{- if $canary }}
+    canary:
+      stableService: {{ $name }}
+      canaryService: {{ $name }}-candidate
+      maxSurge: 100%
+      maxUnavailable: 0
+      trafficRouting:
+        plugins:
+          argoproj-labs/gatewayAPI:
+            httpRoute: {{ $name }}
+            namespace: {{ .Release.Namespace }}
+      steps:
+        - setCanaryScale:
+            replicas: {{ .Values.capacity.instances }}
+        - setWeight: 0
+        - analysis:
+            templates: [{templateName: {{ $name }}-smoke}]
+        - setWeight: 10
+        - analysis:
+            templates: [{templateName: {{ $name }}-smoke}]
+        - setWeight: 50
+        - analysis:
+            templates: [{templateName: {{ $name }}-smoke}]
+        - setWeight: 100
+    {{- else if eq .Values.updates.strategy "replace" }}
+    type: Recreate
+    {{- else }}
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    {{- end }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "mitis.service.podLabels" . | nindent 8 }}
+      annotations:
+        {{- if .Values.mesh }}
+        linkerd.io/inject: enabled
+        config.linkerd.io/skip-outbound-ports: '5432,6379,9092'
+        {{- end }}
+        {{- if .Values.updates.reload }}
+        checksum/configuration: {{ include "mitis.service.configuration" . | sha256sum }}
+        {{- end }}
+        {{- with .Values.updates.restart }}
+        mitis.cloud/restart: {{ . | quote }}
+        {{- end }}
+    spec:
+      {{- include "mitis.service.pod" (dict "root" . "container" .Values "id" "main" "prefix" "" "init" .Values.init "sidecars" .Values.sidecars "restart" "Always") | nindent 6 }}
+{{- $claims := dict }}
+{{- range $id, $volume := .Values.storage }}{{ if eq ($volume.access | default "") "instance" }}{{ $_ := set $claims ($volume.name | default $id) $volume }}{{ end }}{{ end }}
+{{- if and $stateful $claims }}
+  volumeClaimTemplates:
+    {{- range $claim, $volume := $claims }}
+    - metadata:
+        name: {{ $claim }}
+      spec:
+        accessModes: [ReadWriteOnce]
+        volumeMode: Filesystem
+        {{- with $.Values.instanceStorage }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $volume.size | quote }}
+    {{- end }}
+{{- end }}
+{{- if .Values.disruption.surgeBeforeEviction }}
+---
+apiVersion: apps.understudy.sh/v1alpha1
+kind: Understudy
+metadata:
+  name: {{ .Values.disruption.name | default $name }}
+  labels:
+    {{- include "mitis.service.labels" . | nindent 4 }}
+  annotations:
+    {{- include "mitis.service.wave" (dict "root" . "wave" 0) | nindent 4 }}
+spec:
+  targetRef:
+    kind: {{ ternary "Rollout" "Deployment" $canary }}
+    name: {{ $name }}
+  {{- /* Git owns capacity unless an external scaler does; then the baseline follows the live replicas, as in Helm mode. */}}
+  {{- if and (eq .Values.render.engine "argo") (ne .Values.render.capacity "external") }}
+  baselineReplicas: {{ .Values.capacity.instances }}
+  {{- end }}
+  surgeReplicas: 1
+  readinessDeadlineSeconds: {{ include "mitis.service.seconds" (.Values.disruption.maxWait | default "10m") }}
+{{- end }}
+{{- if .Values.availability }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "mitis.service.labels" . | nindent 4 }}
+  annotations:
+    {{- include "mitis.service.wave" (dict "root" . "wave" 0) | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels:
+      {{- if include "mitis.service.meshCanary" . }}
+      app: {{ $name }}-primary
+      {{- else }}
+      {{- include "mitis.service.selector" . | nindent 6 }}
+      {{- end }}
+{{- end }}
+{{- end }}
+{{- end -}}

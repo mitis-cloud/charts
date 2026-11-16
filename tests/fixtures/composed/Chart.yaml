@@ -1,0 +1,9 @@
+apiVersion: v2
+name: composed
+description: Test fixture composing two services through the template library.
+type: application
+version: 0.0.0
+dependencies:
+  - name: service-library
+    version: 0.1.0
+    repository: file://../../../charts/service-library

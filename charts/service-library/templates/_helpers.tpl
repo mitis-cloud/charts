@@ -118,5 +118,10 @@ argocd.argoproj.io/sync-wave: {{ add (mul 100 .root.Values.render.order) .wave |
 {{- end -}}
 
 {{- define "mitis.service.ownsAccount" -}}
-{{- if or .Values.permissions .Values.outputs -}}true{{- end -}}
+{{- if or (and .Values.permissions (not .Values.account)) .Values.outputs -}}true{{- end -}}
+{{- end -}}
+
+{{- /* The account that chart-declared permissions bind to: an existing one named at the root, or the chart's own. */ -}}
+{{- define "mitis.service.permittedAccount" -}}
+{{- if .Values.permissions -}}{{ .Values.account | default (include "mitis.service.name" .) }}{{- end -}}
 {{- end -}}

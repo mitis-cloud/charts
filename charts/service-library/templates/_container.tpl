@@ -107,6 +107,9 @@ env:
         value: {{ $value | quote }}
       {{- end }}
     {{- end }}
+  {{- else if hasKey $probe "command" }}
+  exec:
+    command: {{ toJson $probe.command }}
   {{- else }}
   tcpSocket:
     port: {{ $probe.tcp }}
@@ -116,10 +119,17 @@ env:
   timeoutSeconds: {{ $probe.timeout | default 2 }}
   failureThreshold: {{ $probe.failures | default (ternary 30 3 (eq $kind "startup")) }}
 {{- end }}
+{{- if and (eq .id "main") (kindIs "map" $c.shutdown) }}
+lifecycle:
+  preStop:
+    exec:
+      command: {{ toJson $c.shutdown.command }}
+{{- end }}
 {{- if or $c.mounts $c.files $c.tokens }}
 volumeMounts:
   {{- range $name, $mount := $c.mounts }}
-  - name: {{ $name }}
+  {{- $volume := index $root.Values.storage $name }}
+  - name: {{ if eq ($volume.access | default "") "instance" }}{{ $volume.name | default $name }}{{ else }}{{ $name }}{{ end }}
     {{- if kindIs "string" $mount }}
     mountPath: {{ $mount | quote }}
     {{- else }}

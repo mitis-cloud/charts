@@ -8,12 +8,15 @@
 {{- range $key, $value := $sidecars -}}{{ $_ := set $containers (printf "sidecar-%s" $key) $value }}{{- end -}}
 {{- $volumes := dict -}}
 {{- range $id, $container := $containers -}}
-{{- range $name, $_ := $container.mounts -}}{{ $_ := set $volumes $name (index $root.Values.storage $name) }}{{- end -}}
+{{- range $name, $_ := $container.mounts -}}
+{{- /* Per-instance volumes come from the workload's claim templates. */ -}}
+{{- if ne ((index $root.Values.storage $name).access | default "") "instance" -}}{{ $_ := set $volumes $name (index $root.Values.storage $name) }}{{- end -}}
+{{- end -}}
 {{- end -}}
 restartPolicy: {{ .restart }}
 enableServiceLinks: false
-automountServiceAccountToken: {{ and (not $c.account) (eq (include "mitis.service.ownsAccount" $root) "true") }}
-terminationGracePeriodSeconds: {{ $c.shutdown | default 30 }}
+automountServiceAccountToken: {{ or (and (not $c.account) (eq (include "mitis.service.ownsAccount" $root) "true")) (and (not (empty $c.account)) (eq $c.account (include "mitis.service.permittedAccount" $root))) }}
+terminationGracePeriodSeconds: {{ if kindIs "map" $c.shutdown }}{{ $c.shutdown.grace | default 30 }}{{ else }}{{ $c.shutdown | default 30 }}{{ end }}
 {{- if or (hasKey $c "fileGroup") (eq ($c.security | default "image-defaults") "restricted") }}
 securityContext:
   {{- if hasKey $c "fileGroup" }}
@@ -55,18 +58,29 @@ tolerations:
   {{- end }}
   {{- end }}
 {{- end }}
-{{- if and (eq .id "main") $root.Values.availability }}
+{{- if $spread }}
 topologySpreadConstraints:
+  {{- $domains := dict }}
+  {{- with $root.Values.availability.zones }}{{ $_ := set $domains "topology.kubernetes.io/zone" . }}{{ end }}
+  {{- /* As many domains as instances means no node ever holds two. */}}
+  {{- if $root.Values.availability.nodes }}{{ $_ := set $domains "kubernetes.io/hostname" (max 1 (int $root.Values.capacity.instances)) }}{{ end }}
+  {{- range $key := list "topology.kubernetes.io/zone" "kubernetes.io/hostname" }}
+  {{- if hasKey $domains $key }}
   - maxSkew: 1
-    minDomains: {{ $root.Values.availability.zones }}
-    topologyKey: topology.kubernetes.io/zone
+    minDomains: {{ index $domains $key }}
+    topologyKey: {{ $key }}
     whenUnsatisfiable: DoNotSchedule
     nodeTaintsPolicy: Honor
     labelSelector:
       matchLabels:
         {{- include "mitis.service.selector" $root | nindent 8 }}
+    {{- /* Stateful members are replaced in place, so every revision counts toward the spread. */}}
+    {{- if ne $root.Values.workload "stateful" }}
     matchLabelKeys:
       - {{ ternary "rollouts-pod-template-hash" "pod-template-hash" (not (empty (include "mitis.service.rollout" $root))) }}
+    {{- end }}
+  {{- end }}
+  {{- end }}
 {{- end }}
 {{- if $init }}
 initContainers:

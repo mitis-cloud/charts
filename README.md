@@ -38,6 +38,7 @@ These charts are opinionated: adopting them means adopting a defined platform. T
 | Chart | What it does | Package |
 | --- | --- | --- |
 | [**service**](charts/service/README.md) | A continuous service with its inputs, storage, helpers and jobs, or a resource-only service | `oci://ghcr.io/mitis-cloud/charts/service` |
+| [**service-library**](charts/service-library/README.md) | The service chart's templates as a library, for charts that compose several services into one application | `oci://ghcr.io/mitis-cloud/charts/service-library` |
 | [**delivery**](charts/delivery/README.md) | Argo CD applications and independent Kargo promotion units across explicit environments | `oci://ghcr.io/mitis-cloud/charts/delivery` |
 | [**environment**](charts/environment/README.md) | One environment's namespace, exposure profiles, isolation and maintenance switch, composed by Crossplane | `oci://ghcr.io/mitis-cloud/charts/environment` |
 
@@ -82,7 +83,7 @@ Values flow from chart defaults, to the canonical service file, to environment d
 - Set an environment variable, file, job, storage or mount entry to `null` to omit it.
 - Files supplied through Argo CD must be plain YAML, because Argo does not evaluate Helmfile `.gotmpl` files.
 
-**Vendor charts** are consumed directly with their own values. Anything they cannot express runs as a separate companion release of `service`. See [native vendor charts](docs/deployment.md#native-vendor-charts). The service chart has no vendor or branding namespace. The [integration guide](docs/integrations.md) documents the input-rendering helpers for products that still package their own composition.
+**Vendor charts** are consumed directly with their own values. Anything they cannot express runs as a separate companion release of `service`. See [native vendor charts](docs/deployment.md#native-vendor-charts). The service chart has no vendor or branding namespace. A product that wants one definition for an application made of several processes composes them through the [service library](charts/service-library/README.md); the [integration guide](docs/integrations.md#composing-services-in-a-product-chart) shows how, and also documents the input-rendering helpers for products that package a vendor chart.
 
 ## Guides
 

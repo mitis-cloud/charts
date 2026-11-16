@@ -56,6 +56,39 @@ class InputContract(unittest.TestCase):
         )
         self.assertEqual(by_name["WHOLE"]["valueFrom"]["secretKeyRef"]["key"], "token")
 
+    def test_doubled_braces_in_formats_are_literal(self):
+        values = {
+            "secretPrefix": "tenant-",
+            "facts": {"name": "cluster"},
+            "environment": {
+                "BLOCK": {"format": "server {{ name: {fact:name} }}"},
+                "NESTED": {"format": "{{{ssm:token}}}"},
+            },
+            "files": {
+                "settings": {
+                    "path": "/etc/service/settings.conf",
+                    "format": "accounts {{ user: \"{ssm:token}\" }}\n",
+                }
+            },
+        }
+        docs = render(self.chart, self.base, values)
+        container = resource(docs, "Deployment")["spec"]["template"]["spec"]["containers"][0]
+        by_name = {item["name"]: item for item in container["env"]}
+        self.assertEqual(by_name["BLOCK"]["value"], "server { name: cluster }")
+        secret = resource(docs, "ExternalSecret", "sample-secrets")
+        self.assertEqual(
+            expand_secret(secret, {"tenant-token": 'a"}}{{ .b }}'}),
+            {"NESTED": '{a"}}{{ .b }}}'},
+        )
+        files = next(
+            d for d in docs
+            if d["kind"] == "ExternalSecret" and d["metadata"]["name"] != "sample-secrets"
+        )
+        self.assertEqual(
+            list(expand_secret(files, {"tenant-token": "secret"}).values()),
+            ['accounts { user: "secret" }\n'],
+        )
+
     def test_files_share_one_producer_and_keep_mount_identity(self):
         values = {
             "files": {
@@ -265,7 +298,9 @@ class InputContract(unittest.TestCase):
     def test_invalid_and_conflicting_inputs_fail_closed(self):
         for value in [
             {"format": "{ssm:key|upper}"},
-            {"format": "{{ .password }}"},
+            {"format": "{ .password }"},
+            {"format": "{{ssm:key}"},
+            {"format": "a } b"},
             {"format": "{unknown:key}"},
             {"format": "{ssm:key"},
             {"format": "{fact:missing}"},

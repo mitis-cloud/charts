@@ -5,13 +5,16 @@
   "additionalProperties": false,
   "properties": {
     "name": {"type": "string", "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?)?$", "maxLength": 40, "description": "Stable service identity; defaults to the release name. Keep it fixed across rendering phases."},
-    "workload": {"enum": ["deployment", "resources"], "description": "Run a continuous service or only its explicitly declared resources/jobs. Stateful workloads are roadmap-only."},
+    "workload": {"enum": ["deployment", "stateful", "resources"], "description": "Run a continuous service, a set of members with stable identities and per-instance storage, or only explicitly declared resources/jobs."},
     "image": {"$ref": "#/definitions/image"},
     "command": {"$ref": "#/definitions/strings"},
     "args": {"$ref": "#/definitions/strings"},
     "workingDirectory": {"$ref": "#/definitions/path"},
     "capacity": {"$ref": "#/definitions/capacity"},
-    "availability": {"type": "object", "additionalProperties": false, "required": ["zones"], "properties": {"zones": {"type": "integer", "minimum": 2, "description": "Strict eligible-zone spread; no automatic relaxation during zone loss."}}},
+    "availability": {"type": "object", "additionalProperties": false, "minProperties": 1, "properties": {
+      "zones": {"type": "integer", "minimum": 2, "description": "Strict eligible-zone spread; no automatic relaxation during zone loss."},
+      "nodes": {"const": true, "description": "At most one instance per node, without a zone constraint."}
+    }, "description": "Spread instances and allow one voluntary disruption at a time."},
     "mesh": {"type": "boolean", "description": "Join the service mesh. With canary strategy, the mesh shifts traffic instead of a Gateway."},
     "telemetry": {"type": "object", "additionalProperties": false, "required": ["environment"], "properties": {
       "environment": {"type": "string", "minLength": 1, "description": "Deployment environment reported with the service's telemetry."},
@@ -32,11 +35,18 @@
     "identity": {"$ref": "#/definitions/identity"},
     "security": {"enum": ["image-defaults", "restricted"], "description": "Restricted containers run non-root with a read-only root filesystem, no privilege escalation, all capabilities dropped, and the runtime-default seccomp profile."},
     "architecture": {"enum": ["amd64", "arm64"], "description": "Required node architecture when an image supports only one platform."},
-    "account": {"$ref": "#/definitions/name", "description": "Existing infrastructure-owned service account, including any cloud identity binding. Mutually exclusive with chart-owned permissions."},
-    "shutdown": {"type": "integer", "minimum": 1, "description": "Graceful shutdown budget in seconds."},
+    "account": {"$ref": "#/definitions/name", "description": "Existing infrastructure-owned service account, including any cloud identity binding. Declared permissions bind to it instead of a chart-owned account."},
+    "shutdown": {"oneOf": [
+      {"type": "integer", "minimum": 1},
+      {"type": "object", "additionalProperties": false, "required": ["command"], "properties": {
+        "grace": {"type": "integer", "minimum": 1, "description": "Graceful shutdown budget in seconds, including the command; defaults to 30."},
+        "command": {"type": "array", "minItems": 1, "items": {"type": "string"}, "description": "Command run inside the main container before the stop signal, such as a drain request."}
+      }}
+    ], "description": "Graceful shutdown budget in seconds, or an object adding a command that runs before the stop signal."},
     "fileGroup": {"type": "integer", "minimum": 0, "description": "Group ID used for writable pod volumes."},
     "domain": {"type": "string"},
     "sharedStorage": {"$ref": "#/definitions/name", "description": "Existing shared-filesystem storage class, supplied once by environment defaults. Required when provisioning shared volumes."},
+    "instanceStorage": {"$ref": "#/definitions/name", "description": "Existing storage class for per-instance volumes, supplied once by environment defaults. Omitted uses the cluster default class."},
     "secretPrefix": {"type": "string", "description": "Prefix prepended to remote-secret names. Secret values never belong here."},
     "secretStore": {"$ref": "#/definitions/name", "description": "Existing cluster secret-store identity supplied by environment composition."},
     "secretRefresh": {"$ref": "#/definitions/duration", "description": "Refresh interval for generated input Secrets; defaults to 1h."},
@@ -76,6 +86,11 @@
             "size": {"$ref": "#/definitions/quantity", "description": "PVC request metadata; not an EFS quota."},
             "retain": {"type": "boolean", "description": "Retain the claim on chart removal; defaults to true."}
           }},
+          {"type": "object", "additionalProperties": false, "required": ["access", "size"], "properties": {
+            "access": {"const": "instance"},
+            "name": {"$ref": "#/definitions/name", "description": "Claim template name; defaults to the storage key. Claims are named <name>-<service>-<ordinal>."},
+            "size": {"$ref": "#/definitions/quantity", "description": "Capacity of each member's volume. A running workload cannot change it."}
+          }},
           {"type": "object", "additionalProperties": false, "required": ["existing"], "properties": {"existing": {"$ref": "#/definitions/name"}}},
           {"type": "object", "additionalProperties": false, "required": ["temporary"], "properties": {
             "temporary": {"const": true}, "medium": {"enum": ["disk", "memory"]},
@@ -103,7 +118,7 @@
         "type": "object", "additionalProperties": false, "required": ["group", "resources", "actions"],
         "properties": {
           "group": {"type": "string"}, "resources": {"$ref": "#/definitions/strings"},
-          "actions": {"type": "array", "items": {"enum": ["get", "list", "watch", "create", "update", "patch", "delete"]}},
+          "actions": {"type": "array", "items": {"enum": ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]}},
           "names": {"$ref": "#/definitions/strings"}
         }
       }, "description": "Namespace-scoped API permissions for an actual controller/helper requirement. Never grants cluster permissions."
@@ -119,7 +134,8 @@
         "capacity": {"enum": ["git", "external"], "description": "Who owns replica counts in Argo mode: git pins the Understudy baseline; external lets a scaler own them."}
       }, "description": "Finite orchestration selectors; every part must have a stable owner. Do not switch parts on an existing Helm release."
     },
-    "global": {"type": "object", "additionalProperties": false, "description": "Helm injects an empty global object into dependencies. No public fields are accepted here."}
+    "global": {"type": "object", "additionalProperties": false, "description": "Helm injects an empty global object into dependencies. No public fields are accepted here."},
+    "service-library": {"type": "object", "additionalProperties": false, "properties": {"global": {"type": "object", "additionalProperties": false}}, "description": "Helm injects this entry for the template library dependency. No public fields are accepted here."}
   },
   "definitions": {
     "name": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", "maxLength": 63},
@@ -139,7 +155,7 @@
     "capacity": {
       "type": "object", "additionalProperties": false,
       "properties": {
-        "instances": {"type": "integer", "minimum": 0, "maximum": 2147483647},
+        "instances": {"oneOf": [{"type": "integer", "minimum": 0, "maximum": 2147483647}, {"const": "external"}], "description": "A fixed count, or external to omit replicas when another controller owns scaling."},
         "cpu": {"$ref": "#/definitions/cpu"},
         "memory": {"$ref": "#/definitions/quantity"},
         "cpuLimit": {"$ref": "#/definitions/cpu"},
@@ -162,8 +178,18 @@
         "redirectFromHttp": {"type": "boolean", "description": "Also accept plain HTTP solely to redirect it to HTTPS."},
         "subdomain": {"type": "string"}, "aliases": {"$ref": "#/definitions/strings"},
         "port": {"type": "string"}, "paths": {"type": "array", "minItems": 1, "items": {"$ref": "#/definitions/path"}},
+        "also": {"type": "object", "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {"oneOf": [{"type": "null"}, {
+          "type": "object", "additionalProperties": false, "required": ["exposure"],
+          "anyOf": [{"required": ["hostname"]}, {"required": ["subdomain"]}],
+          "properties": {
+            "exposure": {"enum": ["public", "private"]}, "hostname": {"type": "string", "minLength": 1}, "subdomain": {"type": "string"},
+            "aliases": {"$ref": "#/definitions/strings"}, "paths": {"type": "array", "minItems": 1, "items": {"$ref": "#/definitions/path"}},
+            "priority": {"type": "integer", "minimum": -1000, "maximum": 1000}, "redirectFromHttp": {"type": "boolean"}
+          }
+        }]}, "description": "Additional named routes to the same port and health check, each with its own exposure and hostname."},
         "healthcheck": {"type": "object", "additionalProperties": false, "properties": {
-          "path": {"$ref": "#/definitions/path"}, "successCodes": {"type": "array", "minItems": 1, "items": {"type": "integer", "minimum": 100, "maximum": 599}}
+          "path": {"$ref": "#/definitions/path"}, "successCodes": {"type": "array", "minItems": 1, "items": {"type": "integer", "minimum": 100, "maximum": 599}},
+          "port": {"type": "string", "minLength": 1, "description": "Declared port the load balancer checks; defaults to the traffic port."}
         }}
       }
     },
@@ -172,9 +198,14 @@
     }},
     "probe": {
       "type": "object", "additionalProperties": false,
-      "oneOf": [{"required": ["http"], "not": {"required": ["tcp"]}}, {"required": ["tcp"], "not": {"required": ["http"]}}],
+      "oneOf": [
+        {"required": ["http"], "not": {"anyOf": [{"required": ["tcp"]}, {"required": ["command"]}]}},
+        {"required": ["tcp"], "not": {"anyOf": [{"required": ["http"]}, {"required": ["command"]}]}},
+        {"required": ["command"], "not": {"anyOf": [{"required": ["http"]}, {"required": ["tcp"]}, {"required": ["port"]}, {"required": ["headers"]}]}}
+      ],
       "properties": {
         "http": {"$ref": "#/definitions/path"}, "tcp": {"type": ["string", "integer"]}, "port": {"type": ["string", "integer"]},
+        "command": {"type": "array", "minItems": 1, "items": {"type": "string"}, "description": "Command run inside the container; exit status 0 is healthy. No shell unless the command names one."},
         "headers": {"type": "object", "additionalProperties": {"type": "string"}},
         "delay": {"type": "integer", "minimum": 0}, "interval": {"type": "integer", "minimum": 1},
         "timeout": {"type": "integer", "minimum": 1}, "failures": {"type": "integer", "minimum": 1}
@@ -213,7 +244,7 @@
       }
     },
     "ssm": {"type": "object", "additionalProperties": false, "required": ["ssm"], "properties": {"ssm": {"$ref": "#/definitions/remote"}}},
-    "format": {"type": "object", "additionalProperties": false, "required": ["format"], "properties": {"format": {"type": "string"}}, "description": "Literal text with explicit {ssm:key} or {fact:name} substitutions; |urlquery is the only supported encoding operation."},
+    "format": {"type": "object", "additionalProperties": false, "required": ["format"], "properties": {"format": {"type": "string"}}, "description": "Literal text with explicit {ssm:key} or {fact:name} substitutions; |urlquery is the only supported encoding operation. Doubled braces are literal braces."},
     "document": {"oneOf": [
       {"type": ["string", "number", "boolean", "null"]},
       {"$ref": "#/definitions/ssm"},
@@ -224,9 +255,10 @@
     ]},
     "files": {"type": "object", "propertyNames": {"$ref": "#/definitions/name"}, "additionalProperties": {"oneOf": [{"type": "null"}, {
       "type": "object", "additionalProperties": false, "required": ["path"],
-      "oneOf": [{"required": ["content"]}, {"required": ["secret"]}, {"required": ["ssm"]}, {"required": ["format"]}, {"required": ["yaml"]}, {"required": ["json"]}, {"required": ["from"]}],
+      "oneOf": [{"required": ["content"]}, {"required": ["secret"]}, {"required": ["configMap"]}, {"required": ["ssm"]}, {"required": ["format"]}, {"required": ["yaml"]}, {"required": ["json"]}, {"required": ["from"]}],
       "properties": {
         "path": {"$ref": "#/definitions/path"}, "content": {"type": "string"}, "secret": {"$ref": "#/definitions/secret"},
+        "configMap": {"$ref": "#/definitions/secret", "description": "Read a key from an existing same-namespace ConfigMap without claiming ownership."},
         "ssm": {"$ref": "#/definitions/remote"}, "format": {"type": "string"},
         "yaml": {"$ref": "#/definitions/document"}, "json": {"$ref": "#/definitions/document"},
         "from": {"$ref": "#/definitions/name", "description": "Consume a uniquely named file declared by this service or one of its helpers."},

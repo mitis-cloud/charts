@@ -31,12 +31,19 @@
 {{- $text := $v.format -}}
 {{- $parts := list -}}
 {{- $literal = "" -}}
-{{- range $token := regexFindAll "\\{[^{}]*\\}" $text -1 -}}
-{{- $before := first (splitList $token $text) -}}
-{{- $text = trimPrefix (printf "%s%s" $before $token) $text -}}
-{{- if regexMatch "[{}]" $before -}}{{ fail "format contains an unmatched brace" }}{{- end -}}
-{{- $parts = append $parts (printf "%q" $before) -}}
-{{- $literal = printf "%s%s" $literal $before -}}
+{{- /* Doubled braces are literal; scanning left to right lets a reference sit inside literal braces. */ -}}
+{{- $pattern := "\\{\\{|\\}\\}|\\{[^{}]*\\}|[{}]" -}}
+{{- $literals := regexSplit $pattern $text -1 -}}
+{{- $pending := "" -}}
+{{- range $i, $token := regexFindAll $pattern $text -1 -}}
+{{- $pending = printf "%s%s" $pending (index $literals $i) -}}
+{{- if has $token (list (repeat 2 "{") (repeat 2 "}")) -}}
+{{- $pending = printf "%s%s" $pending (substr 0 1 $token) -}}
+{{- else if eq (len $token) 1 -}}{{ fail "format contains an unmatched brace" }}
+{{- else -}}
+{{- $parts = append $parts (printf "%q" $pending) -}}
+{{- $literal = printf "%s%s" $literal $pending -}}
+{{- $pending = "" -}}
 {{- if not (regexMatch "^\\{(ssm|fact):[A-Za-z0-9_./-]+(\\|urlquery)?\\}$" $token) -}}{{ fail (printf "unsupported format reference %s" $token) }}{{- end -}}
 {{- $body := trimSuffix "}" (trimPrefix "{" $token) -}}
 {{- $encoded := hasSuffix "|urlquery" $body -}}
@@ -51,9 +58,10 @@
 {{- $parts = append $parts $part -}}
 {{- $literal = printf "%s%s" $literal $local -}}
 {{- end -}}
-{{- if regexMatch "[{}]" $text -}}{{ fail "format contains an unmatched brace" }}{{- end -}}
-{{- $parts = append $parts (printf "%q" $text) -}}
-{{- $literal = printf "%s%s" $literal $text -}}
+{{- end -}}
+{{- $pending = printf "%s%s" $pending (last $literals) -}}
+{{- $parts = append $parts (printf "%q" $pending) -}}
+{{- $literal = printf "%s%s" $literal $pending -}}
 {{- $expr = printf "(printf %q %s)" (repeat (len $parts) "%s") (join " " $parts) -}}
 {{- else -}}
 {{- $literal = dict -}}
@@ -125,6 +133,8 @@
 {{- $dataKey := $file.key | default $key -}}
 {{- if $file.secret -}}
 {{- $kind = "Secret" -}}{{ $name = $file.secret.name -}}{{ $dataKey = $file.secret.key -}}
+{{- else if $file.configMap -}}
+{{- $name = $file.configMap.name -}}{{ $dataKey = $file.configMap.key -}}
 {{- else -}}
 {{- $value := $file.content -}}
 {{- $serialize := "" -}}
@@ -144,7 +154,7 @@
 {{- end -}}
 {{- if $input.remotes -}}{{ $kind = "Secret" }}{{- end -}}
 {{- end -}}
-{{- mustToJson (dict "kind" $kind "name" $name "key" $dataKey "input" $input "generated" (not $file.secret) "producer" (not $consumer.from)) -}}
+{{- mustToJson (dict "kind" $kind "name" $name "key" $dataKey "input" $input "generated" (not (or $file.secret $file.configMap)) "producer" (not $consumer.from)) -}}
 {{- end -}}
 
 {{- define "mitis.service.addInput" -}}

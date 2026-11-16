@@ -51,6 +51,7 @@ The service chart's defaults switch some of these on. A **default** in the "Trig
 | OpenTelemetry collector | `telemetry` | An OTLP/HTTP receiver on port 4318 of every node |
 | [Understudy](https://github.com/mitis-cloud/understudy) 0.4.4 | `disruption.surgeBeforeEviction: true` | The controller and the 0.4.4 CRDs. Helm doesn't upgrade CRDs, so upgrade them explicitly |
 | ReadWriteMany storage class | Any `storage` entry with `access: shared` | A class named by `sharedStorage` (for example EFS CSI) and its backing filesystem. Pre-existing volumes for adopted data |
+| Per-instance storage class | A stateful workload's `storage` entry with `access: instance` | A class named by `instanceStorage`, or a cluster default class, that provisions ReadWriteOnce filesystem volumes |
 | Node pools | `placement` other than `any` | Nodes labelled `env=<pool>` with a matching `env=<pool>:NoSchedule` taint |
 | Zone spread | `availability.zones` | Nodes labelled `topology.kubernetes.io/zone` across at least that many zones, with room to schedule in each |
 | Architecture | `architecture` | Nodes with the matching `kubernetes.io/arch` |

@@ -23,6 +23,8 @@
 {{- end -}}
 {{- end -}}
 {{- $name := include "mitis.service.name" . -}}
+{{- if and (eq (toString $v.capacity.instances) "external") (or (ne $v.workload "deployment") (eq $v.updates.strategy "canary") $v.disruption.surgeBeforeEviction $v.availability) -}}
+{{- fail "capacity.instances=external requires a Deployment without canary, surgeBeforeEviction or availability constraints" -}}{{- end -}}
 {{- $identities := dict -}}
 {{- if and (eq $v.workload "resources") (or $v.init $v.sidecars $v.ports $v.health $v.environment $v.tokens $v.mounts (and $v.http (not $v.response)) $v.availability $v.command $v.args $v.identity $v.fileGroup $v.shutdown $v.workingDirectory $v.account $v.security $v.mesh $v.telemetry) -}}
 {{- fail "resource-only services declare container inputs on their jobs, not at the root" -}}{{- end -}}
@@ -30,8 +32,10 @@
 {{- fail "service name/release name must be a DNS label of at most 40 characters" -}}{{- end -}}
 {{- if and $v.availability (lt (int $v.capacity.instances) (int $v.availability.zones)) -}}
 {{- fail "capacity.instances must cover availability.zones; omit availability when no zone constraint is wanted" -}}{{- end -}}
-{{- if and $v.disruption.surgeBeforeEviction (or (eq $v.updates.strategy "replace") (eq $v.workload "resources")) -}}
+{{- if and $v.disruption.surgeBeforeEviction (or (eq $v.updates.strategy "replace") (ne $v.workload "deployment")) -}}
 {{- fail "disruption.surgeBeforeEviction requires an overlap-safe continuous workload" -}}{{- end -}}
+{{- if and (eq $v.workload "stateful") (ne $v.updates.strategy "rolling") -}}
+{{- fail "a stateful workload replaces its members one at a time; updates.strategy must be rolling" -}}{{- end -}}
 {{- if and $v.updates.canary (not (include "mitis.service.meshCanary" .)) -}}
 {{- fail "updates.canary requires canary strategy and mesh" -}}{{- end -}}
 {{- if include "mitis.service.meshCanary" . -}}
@@ -51,7 +55,23 @@
 {{- if $v.http -}}
 {{- if and (not $v.response) (not (hasKey $v.ports ($v.http.port | default "http"))) -}}{{ fail "http.port must identify a declared port" }}{{- end -}}
 {{- if and (not $v.http.hostname) (not $v.domain) -}}{{ fail "http requires hostname or domain" }}{{- end -}}
+{{- with ($v.http.healthcheck | default dict).port -}}
+{{- if not (hasKey $v.ports .) -}}{{ fail "http.healthcheck.port must identify a declared port" }}{{- end -}}
+{{- end -}}
 {{- if and (eq $v.render.routing "gateway") (or $v.http.healthcheck (hasKey $v.http "priority")) -}}{{ fail "http.healthcheck and http.priority require ingress routing; Gateway implementations own their health policy and route precedence" }}{{- end -}}
+{{- $routes := dict -}}
+{{- include "mitis.service.reserve" (dict "identities" $routes "kind" "Route" "name" $name) -}}
+{{- if and $v.http.redirectFromHttp (eq $v.render.routing "gateway") -}}{{ include "mitis.service.reserve" (dict "identities" $routes "kind" "Route" "name" (printf "%s-http" $name)) }}{{- end -}}
+{{- range $key, $route := $v.http.also -}}
+{{- if eq (kindOf $route) "invalid" -}}{{ $_ := unset $v.http.also $key }}
+{{- else -}}
+{{- if or $v.response (eq $v.updates.strategy "canary") -}}{{ fail "http.also needs a running service without canary strategy; a canary shifts traffic on one route" }}{{- end -}}
+{{- if and (not $route.hostname) (not $v.domain) -}}{{ fail (printf "http.also.%s requires hostname or domain" $key) }}{{- end -}}
+{{- if and (eq $v.render.routing "gateway") (hasKey $route "priority") -}}{{ fail (printf "http.also.%s.priority requires ingress routing" $key) }}{{- end -}}
+{{- include "mitis.service.reserve" (dict "identities" $routes "kind" "Route" "name" (printf "%s-%s" $name $key)) -}}
+{{- if and $route.redirectFromHttp (eq $v.render.routing "gateway") -}}{{ include "mitis.service.reserve" (dict "identities" $routes "kind" "Route" "name" (printf "%s-%s-http" $name $key)) }}{{- end -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- if $v.response -}}
 {{- if or (ne $v.workload "resources") (ne $v.render.routing "ingress") (not $v.http) -}}{{ fail "response requires workload=resources, http, and ingress routing" }}{{- end -}}
@@ -60,7 +80,7 @@
 {{- end -}}
 {{- $containers := include "mitis.service.containers" . | fromJson -}}
 {{- range $id, $c := $containers -}}
-{{- if and $c.account $v.permissions -}}{{ fail "account consumes an existing service account and cannot be combined with chart-owned permissions" }}{{- end -}}
+{{- if and $c.account $v.permissions (not $v.account) -}}{{ fail "permissions bind to the service's own account; declare account on the service itself to bind them to an existing one" }}{{- end -}}
 {{- if and $c.account $v.outputs -}}{{ fail "outputs are written with the chart-owned service account and cannot be combined with account" }}{{- end -}}
 {{- range $key, $value := $c.environment -}}
 {{- if and (kindIs "map" $value) (hasKey $value "output") (not (hasKey ($v.outputs | default dict) $value.output)) -}}{{ fail (printf "environment %s reads undeclared output %s" $key $value.output) }}{{- end -}}
@@ -72,6 +92,7 @@
 {{- $paths := dict -}}
 {{- range $volume, $mount := $c.mounts -}}
 {{- if not (hasKey $v.storage $volume) -}}{{ fail (printf "%s.mounts refers to unknown storage %s" $id $volume) }}{{- end -}}
+{{- if and (eq ((index $v.storage $volume).access | default "") "instance") (or (hasPrefix "job-" $id) (hasPrefix "smoke" $id)) -}}{{ fail (printf "%s mounts per-instance storage %s, which only the workload's own containers can reach" $id $volume) }}{{- end -}}
 {{- $path := $mount -}}{{ if kindIs "map" $mount }}{{ $path = $mount.path }}{{ end -}}
 {{- if and (kindIs "map" $mount) (has ".." (splitList "/" ($mount.subdirectory | default ""))) -}}{{ fail "mount subdirectory must not contain parent traversal" }}{{- end -}}
 {{- if hasKey $paths $path -}}{{ fail (printf "%s has duplicate mount path %s" $id $path) }}{{- end -}}
@@ -92,7 +113,7 @@
 {{- end -}}
 {{- range $probe, $p := $c.health -}}
 {{- $port := $p.tcp | default ($p.port | default "http") -}}
-{{- if and (kindIs "string" $port) (not (hasKey ($c.ports | default dict) $port)) -}}
+{{- if and (not (hasKey $p "command")) (kindIs "string" $port) (not (hasKey ($c.ports | default dict) $port)) -}}
 {{- fail (printf "%s.health.%s refers to unknown named port %s" $id $probe $port) -}}{{- end -}}
 {{- end -}}
 {{- end -}}
@@ -106,6 +127,12 @@
 {{- range $id, $volume := $v.storage -}}
 {{- if eq ($volume.access | default "") "shared" -}}
 {{- include "mitis.service.reserve" (dict "identities" $identities "kind" "PersistentVolumeClaim" "name" ($volume.name | default (printf "%s-%s" $name $id))) -}}
+{{- end -}}
+{{- if eq ($volume.access | default "") "instance" -}}
+{{- if ne $v.workload "stateful" -}}{{ fail (printf "storage.%s is per instance and requires workload=stateful" $id) }}{{- end -}}
+{{- include "mitis.service.reserve" (dict "identities" $identities "kind" "Volume" "name" ($volume.name | default $id)) -}}
+{{- else -}}
+{{- include "mitis.service.reserve" (dict "identities" $identities "kind" "Volume" "name" $id) -}}
 {{- end -}}
 {{- end -}}
 {{- $inputCount := add (len $inputs.secrets) (len $inputs.configs) (len $v.storage) -}}
