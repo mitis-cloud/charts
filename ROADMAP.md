@@ -10,6 +10,11 @@ helpers; vendor-specific settings remain outside the reusable chart.
 `service:0.3.0` adds service outputs: values a service writes once and publishes to the
 secret store through External Secrets, read back with `{output: key}`.
 
+`service:0.7.0` adds stateful workloads with per-instance storage, additional HTTP routes,
+command health checks and a command before the stop signal. Its templates move to the
+`service-library` chart, which product charts use to compose several services in one release
+([ADR 0003](docs/adr/0003-service-templates-in-a-library-chart.md)).
+
 `delivery:0.1.0` retains the independent Argo CD/Kargo definition. Controller-runtime
 validation for promotion, canary traffic and planned-drain handover remains an
 adopter integration step; schema validation alone does not establish it.
@@ -53,7 +58,7 @@ Members have stable identities, a peer Service for discovery, retained per-membe
 
 Understudy and Argo Rollouts do not manage StatefulSets, so surge handover and canary strategies are rejected for this mode.
 
-The following proposed storage entry is **not supported chart values**. The
+The following proposed storage entry is **not a supported chart value**. The
 current schema rejects it. Add capabilities only with a concrete consumer and a
 verified native lifecycle.
 

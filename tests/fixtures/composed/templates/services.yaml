@@ -1,3 +1,4 @@
+{{- $shared := pick .Values "domain" "facts" "secretPrefix" "secretStore" "secretRefresh" "sharedStorage" "instanceStorage" "placement" "render" -}}
 {{- range $name, $service := .Values.services }}
-{{ include "mitis.service.render" (dict "root" $ "values" (mergeOverwrite (dict "name" $name) $service)) }}
+{{ include "mitis.service.render" (dict "root" $ "values" (mergeOverwrite (deepCopy $shared) (dict "name" $name) $service)) }}
 {{- end }}

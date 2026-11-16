@@ -60,9 +60,29 @@ Existing installations need the **0.4.4 CRD upgrade explicitly**; Helm does not 
 
 Omission adds no zone requirement, including for one instance. If an eligible zone is lost, the policy does not automatically relax into same-zone placement. Scheduling constraints do not continuously rebalance existing pods or prove application-level availability. Node provisioning and storage constraints must permit the requested spread.
 
+## Composing services in a product chart
+
+Since `service:0.7.0`, the service templates live in the `service-library` library chart ([ADR 0003](adr/0003-service-templates-in-a-library-chart.md)). A product-owned chart depends on it and renders each process of an application from a values map in the service vocabulary:
+
+```yaml
+# Chart.yaml
+dependencies:
+  - name: service-library
+    version: 0.1.0
+    repository: oci://ghcr.io/mitis-cloud/charts
+```
+
+```gotemplate
+{{- $shared := pick .Values "domain" "facts" "secretPrefix" "secretStore" "secretRefresh" "sharedStorage" "instanceStorage" "placement" "render" -}}
+{{ include "mitis.service.render" (dict "root" $ "values" (mergeOverwrite (deepCopy $shared) (dict "name" "server") .Values.server)) }}
+{{ include "mitis.service.render" (dict "root" $ "values" (mergeOverwrite (deepCopy $shared) (dict "name" "worker") .Values.worker)) }}
+```
+
+`mitis.service.render` applies the service chart's defaults (`mitis.service.defaults`), validates the definition and renders the same resources as a release of the service chart. Give each service its own `name`; it defaults to the release name. Pass the environment-supplied settings and `render` to every service, so the engine, routing and ordering selected by the orchestrator apply to all of them. The composing chart owns its values schema: the service chart's schema is not applied to the maps it passes. It may add templates of its own for resources outside the service vocabulary. With the delivery chart, register the chart with `serviceScopes: ['']` so it receives the environment defaults and `render` parameters.
+
 ## Native chart composition
 
-A product-owned wrapper may include native charts and `service` as ordinary Helm dependencies. Set the helper dependency's `workload: resources` when it only supplies dedicated jobs or inputs. Declare each helper's context, environment, files, mounts and resources explicitly. Helm dependency aliases do not copy parent values to children or share sibling values. A wrapper owns its composition and native adapters; Mitis remains product-neutral.
+A product-owned wrapper may also include native charts as ordinary Helm dependencies beside the library. Helm dependency aliases do not copy parent values to children or share sibling values, so a native chart keeps its own values. A wrapper owns its composition and native adapters; Mitis remains product-neutral.
 
 For a native workload that already consumes an existing Secret, the named helpers expose the same input compiler without adding a first-party workload:
 

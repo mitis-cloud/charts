@@ -43,6 +43,53 @@ class ServiceLibrary(unittest.TestCase):
         self.assertEqual(deployments["worker"]["spec"]["replicas"], 2)
         self.assertEqual([d["metadata"]["name"] for d in docs if d["kind"] == "Service"], ["server"])
 
+    def test_environment_settings_and_ordering_reach_every_service(self):
+        image = {"repository": "example.invalid/service", "tag": "fixture"}
+        docs = render(
+            self.composed,
+            {
+                "secretPrefix": "test-",
+                "instanceStorage": "block",
+                "placement": "stable",
+                "render": {"engine": "argo", "order": 2},
+                "services": {
+                    "broker": {
+                        "image": image,
+                        "workload": "stateful",
+                        "capacity": {"instances": 3},
+                        "ports": {"client": 4222},
+                        "storage": {"data": {"access": "instance", "size": "1Gi"}},
+                        "mounts": {"data": "/data"},
+                    },
+                    "controller": {
+                        "image": image,
+                        "environment": {"TOKEN": {"ssm": "token"}},
+                        "placement": "any",
+                    },
+                },
+            },
+        )
+        kinds = {(d["kind"], d["metadata"]["name"]) for d in docs}
+        self.assertLessEqual(
+            {
+                ("StatefulSet", "broker"),
+                ("Service", "broker"),
+                ("Service", "broker-peers"),
+                ("Deployment", "controller"),
+                ("ExternalSecret", "controller-secrets"),
+            },
+            kinds,
+        )
+        broker = next(d for d in docs if d["kind"] == "StatefulSet")
+        self.assertEqual(broker["spec"]["volumeClaimTemplates"][0]["spec"]["storageClassName"], "block")
+        self.assertEqual(broker["spec"]["template"]["spec"]["nodeSelector"], {"env": "stable"})
+        controller = next(d for d in docs if d["kind"] == "Deployment")
+        self.assertNotIn("nodeSelector", controller["spec"]["template"]["spec"])
+        secret = next(d for d in docs if d["kind"] == "ExternalSecret")
+        self.assertEqual(secret["spec"]["data"][0]["remoteRef"]["key"], "test-token")
+        for doc in (broker, controller):
+            self.assertEqual(doc["metadata"]["annotations"]["argocd.argoproj.io/sync-wave"], "200")
+
 
 if __name__ == "__main__":
     unittest.main()
