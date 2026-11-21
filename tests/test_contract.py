@@ -583,6 +583,15 @@ class ServiceContract(unittest.TestCase):
             with self.subTest(invalid=invalid):
                 render(self.chart, self.base, invalid, success=False)
 
+    def test_gpus_reserve_whole_devices(self):
+        docs = render(self.chart, self.base, {"capacity": {"gpus": 1}})
+        resources = resource(docs, "Deployment")["spec"]["template"]["spec"]["containers"][0]["resources"]
+        self.assertEqual("1", resources["requests"]["nvidia.com/gpu"])
+        self.assertEqual("1", resources["limits"]["nvidia.com/gpu"])
+        for invalid in [{"capacity": {"gpus": 0}}, {"capacity": {"gpus": "1"}}]:
+            with self.subTest(invalid=invalid):
+                render(self.chart, self.base, invalid, success=False)
+
     def test_native_layering_replaces_lists_and_removes_nulls(self):
         docs = render(
             self.chart,

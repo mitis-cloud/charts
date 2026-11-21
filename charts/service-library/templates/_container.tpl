@@ -24,6 +24,7 @@ workingDir: {{ . | quote }}
 {{- if ne (index $capacity $key) nil -}}{{ $_ := set $requests $key (toString (index $capacity $key)) }}{{- end -}}
 {{- if ne (index $capacity (printf "%sLimit" $key)) nil -}}{{ $_ := set $limits $key (toString (index $capacity (printf "%sLimit" $key))) }}{{- end -}}
 {{- end -}}
+{{- with $capacity.gpus -}}{{ $_ := set $requests "nvidia.com/gpu" (toString .) }}{{ $_ := set $limits "nvidia.com/gpu" (toString .) }}{{- end -}}
 {{- if $requests -}}{{ $_ := set $resources "requests" $requests }}{{- end -}}
 {{- if $limits -}}{{ $_ := set $resources "limits" $limits }}{{- end }}
 resources: {{ toJson $resources }}

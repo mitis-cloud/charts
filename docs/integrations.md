@@ -68,7 +68,7 @@ Since `service:0.7.0`, the service templates live in the `service-library` libra
 # Chart.yaml
 dependencies:
   - name: service-library
-    version: 0.1.0
+    version: 0.2.0
     repository: oci://ghcr.io/mitis-cloud/charts
 ```
 

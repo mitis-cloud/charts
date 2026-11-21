@@ -159,7 +159,8 @@
         "cpu": {"$ref": "#/definitions/cpu"},
         "memory": {"$ref": "#/definitions/quantity"},
         "cpuLimit": {"$ref": "#/definitions/cpu"},
-        "memoryLimit": {"$ref": "#/definitions/quantity"}
+        "memoryLimit": {"$ref": "#/definitions/quantity"},
+        "gpus": {"type": "integer", "minimum": 1, "description": "Whole GPUs reserved for the container; it schedules only on nodes that advertise them."}
       }, "description": "Baseline instances, scheduling reservations, and ceilings. CPU has no default ceiling."
     },
     "port": {"type": "integer", "minimum": 1, "maximum": 65535},

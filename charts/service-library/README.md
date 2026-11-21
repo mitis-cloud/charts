@@ -6,7 +6,7 @@ The templates behind the [service chart](../service/README.md), packaged as a He
 # Chart.yaml
 dependencies:
   - name: service-library
-    version: 0.1.0
+    version: 0.2.0
     repository: oci://ghcr.io/mitis-cloud/charts
 ```
 
